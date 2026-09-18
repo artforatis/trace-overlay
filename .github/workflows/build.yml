@@ -1,0 +1,441 @@
+name: Build APK
+on:
+  workflow_dispatch:
+  push:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.7"
+      - name: Create project
+        run: |
+          mkdir -p app/src/main/java/com/trace/overlay
+          cat > settings.gradle <<'EOF'
+          pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
+          dependencyResolutionManagement { repositories { google(); mavenCentral() } }
+          rootProject.name = "TraceOverlay"
+          include ':app'
+          EOF
+          cat > build.gradle <<'EOF'
+          plugins { id 'com.android.application' version '8.5.2' apply false }
+          EOF
+          cat > gradle.properties <<'EOF'
+          org.gradle.jvmargs=-Xmx2048m
+          EOF
+          cat > app/build.gradle <<'EOF'
+          plugins { id 'com.android.application' }
+          android {
+              namespace 'com.trace.overlay'
+              compileSdk 34
+              defaultConfig {
+                  applicationId "com.trace.overlay"
+                  minSdk 30
+                  targetSdk 34
+                  versionCode 1
+                  versionName "1.0"
+              }
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
+          }
+          EOF
+          cat > app/src/main/AndroidManifest.xml <<'EOF'
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/>
+              <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+              <application
+                  android:label="Trace Overlay"
+                  android:icon="@android:drawable/ic_menu_gallery"
+                  android:theme="@android:style/Theme.DeviceDefault">
+                  <activity android:name=".MainActivity" android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN"/>
+                          <category android:name="android.intent.category.LAUNCHER"/>
+                      </intent-filter>
+                  </activity>
+                  <service
+                      android:name=".OverlayService"
+                      android:exported="false"
+                      android:foregroundServiceType="specialUse">
+                      <property
+                          android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                          android:value="Floating tracing reference image"/>
+                  </service>
+              </application>
+          </manifest>
+          EOF
+          cat > app/src/main/java/com/trace/overlay/MainActivity.java <<'EOF'
+          package com.trace.overlay;
+
+          import android.app.Activity;
+          import android.content.Intent;
+          import android.net.Uri;
+          import android.os.Build;
+          import android.os.Bundle;
+          import android.provider.Settings;
+          import android.view.Gravity;
+          import android.widget.Button;
+          import android.widget.LinearLayout;
+          import android.widget.TextView;
+          import android.widget.Toast;
+
+          public class MainActivity extends Activity {
+              static final int PICK = 1;
+
+              @Override
+              protected void onCreate(Bundle b) {
+                  super.onCreate(b);
+                  if (Build.VERSION.SDK_INT >= 33) {
+                      requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"}, 2);
+                  }
+                  float d = getResources().getDisplayMetrics().density;
+                  LinearLayout l = new LinearLayout(this);
+                  l.setOrientation(LinearLayout.VERTICAL);
+                  l.setGravity(Gravity.CENTER_HORIZONTAL);
+                  int p = (int) (32 * d);
+                  l.setPadding(p, p, p, p);
+
+                  TextView t = new TextView(this);
+                  t.setText("Trace Overlay");
+                  t.setTextSize(30);
+                  l.addView(t);
+
+                  Button perm = new Button(this);
+                  perm.setText("১. অনুমতি দিন");
+                  perm.setOnClickListener(v -> startActivity(new Intent(
+                          Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                          Uri.parse("package:" + getPackageName()))));
+                  add(l, perm, d);
+
+                  Button pick = new Button(this);
+                  pick.setText("২. ছবি বাছাই করে শুরু করুন");
+                  pick.setOnClickListener(v -> {
+                      if (!Settings.canDrawOverlays(this)) {
+                          Toast.makeText(this, "আগে ১ নম্বর বাটনে অনুমতি দিন", Toast.LENGTH_LONG).show();
+                          return;
+                      }
+                      Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                      i.addCategory(Intent.CATEGORY_OPENABLE);
+                      i.setType("image/*");
+                      startActivityForResult(i, PICK);
+                  });
+                  add(l, pick, d);
+
+                  Button stop = new Button(this);
+                  stop.setText("বন্ধ করুন");
+                  stop.setOnClickListener(v -> stopService(new Intent(this, OverlayService.class)));
+                  add(l, stop, d);
+
+                  setContentView(l);
+              }
+
+              void add(LinearLayout l, Button btn, float d) {
+                  LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                          LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+                  lp.topMargin = (int) (20 * d);
+                  btn.setTextSize(20);
+                  l.addView(btn, lp);
+              }
+
+              @Override
+              protected void onActivityResult(int rq, int rs, Intent data) {
+                  super.onActivityResult(rq, rs, data);
+                  if (rq == PICK && rs == RESULT_OK && data != null && data.getData() != null) {
+                      Uri u = data.getData();
+                      try {
+                          getContentResolver().takePersistableUriPermission(u, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                      } catch (Exception ignored) { }
+                      Intent s = new Intent(this, OverlayService.class);
+                      s.setData(u);
+                      s.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                      startForegroundService(s);
+                      moveTaskToBack(true);
+                  }
+              }
+          }
+          EOF
+          cat > app/src/main/java/com/trace/overlay/OverlayService.java <<'EOF'
+          package com.trace.overlay;
+
+          import android.app.Notification;
+          import android.app.NotificationChannel;
+          import android.app.NotificationManager;
+          import android.app.Service;
+          import android.content.Intent;
+          import android.content.pm.ServiceInfo;
+          import android.graphics.Bitmap;
+          import android.graphics.Color;
+          import android.graphics.ImageDecoder;
+          import android.graphics.Matrix;
+          import android.graphics.PixelFormat;
+          import android.graphics.drawable.Drawable;
+          import android.graphics.drawable.GradientDrawable;
+          import android.net.Uri;
+          import android.os.Build;
+          import android.os.IBinder;
+          import android.view.Gravity;
+          import android.view.MotionEvent;
+          import android.view.View;
+          import android.view.WindowManager;
+          import android.widget.ImageView;
+          import android.widget.LinearLayout;
+          import android.widget.SeekBar;
+          import android.widget.TextView;
+          import android.widget.Toast;
+
+          public class OverlayService extends Service {
+              WindowManager wm;
+              ImageView img;
+              WindowManager.LayoutParams imgLp, panelLp;
+              LinearLayout panel, tools;
+              TextView lockBtn;
+              Matrix m = new Matrix();
+              boolean locked = false, collapsed = false;
+              float lastX, lastY, prevDist, prevAngle, prevMidX, prevMidY, density;
+
+              @Override public IBinder onBind(Intent i) { return null; }
+
+              @Override
+              public int onStartCommand(Intent intent, int flags, int startId) {
+                  startFg();
+                  if (wm == null) buildViews();
+                  if (intent != null && intent.getData() != null) loadImage(intent.getData());
+                  return START_NOT_STICKY;
+              }
+
+              void startFg() {
+                  NotificationManager nm = getSystemService(NotificationManager.class);
+                  nm.createNotificationChannel(new NotificationChannel("ov", "Trace Overlay", NotificationManager.IMPORTANCE_LOW));
+                  Notification n = new Notification.Builder(this, "ov")
+                          .setContentTitle("Trace Overlay চালু আছে")
+                          .setSmallIcon(android.R.drawable.ic_menu_gallery)
+                          .setOngoing(true).build();
+                  if (Build.VERSION.SDK_INT >= 34) {
+                      startForeground(1, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
+                  } else {
+                      startForeground(1, n);
+                  }
+              }
+
+              void buildViews() {
+                  wm = (WindowManager) getSystemService(WINDOW_SERVICE);
+                  density = getResources().getDisplayMetrics().density;
+
+                  img = new ImageView(this);
+                  img.setScaleType(ImageView.ScaleType.MATRIX);
+                  img.setOnTouchListener((v, e) -> onImgTouch(e));
+                  imgLp = new WindowManager.LayoutParams(
+                          WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT,
+                          WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY, 0, PixelFormat.TRANSLUCENT);
+                  imgLp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+                  imgLp.alpha = 0.5f;
+                  applyFlags();
+                  wm.addView(img, imgLp);
+                  buildPanel();
+              }
+
+              void applyFlags() {
+                  int f = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                          | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+                          | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS;
+                  if (locked) f |= WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
+                  imgLp.flags = f;
+              }
+
+              TextView btn(String s) {
+                  TextView t = new TextView(this);
+                  t.setText(s);
+                  t.setTextSize(24);
+                  t.setTextColor(Color.WHITE);
+                  int p = (int) (10 * density);
+                  t.setPadding(p, p / 2, p, p / 2);
+                  return t;
+              }
+
+              void buildPanel() {
+                  panel = new LinearLayout(this);
+                  panel.setOrientation(LinearLayout.HORIZONTAL);
+                  panel.setGravity(Gravity.CENTER_VERTICAL);
+                  GradientDrawable bg = new GradientDrawable();
+                  bg.setColor(0xEE222222);
+                  bg.setCornerRadius(24 * density);
+                  panel.setBackground(bg);
+                  int p = (int) (6 * density);
+                  panel.setPadding(p, p, p, p);
+
+                  TextView handle = btn("☰");
+                  panel.addView(handle);
+
+                  tools = new LinearLayout(this);
+                  tools.setOrientation(LinearLayout.HORIZONTAL);
+                  tools.setGravity(Gravity.CENTER_VERTICAL);
+
+                  lockBtn = btn("🔓");
+                  lockBtn.setOnClickListener(v -> {
+                      locked = !locked;
+                      applyFlags();
+                      wm.updateViewLayout(img, imgLp);
+                      lockBtn.setText(locked ? "🔒" : "🔓");
+                  });
+                  tools.addView(lockBtn);
+
+                  TextView eye = btn("👁");
+                  eye.setOnClickListener(v -> img.setVisibility(
+                          img.getVisibility() == View.VISIBLE ? View.INVISIBLE : View.VISIBLE));
+                  tools.addView(eye);
+
+                  TextView fit = btn("⟲");
+                  fit.setOnClickListener(v -> fitImage());
+                  tools.addView(fit);
+
+                  SeekBar sb = new SeekBar(this);
+                  sb.setMax(75);
+                  sb.setProgress(45);
+                  sb.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+                      public void onProgressChanged(SeekBar s, int v, boolean u) {
+                          imgLp.alpha = (v + 5) / 100f;
+                          wm.updateViewLayout(img, imgLp);
+                      }
+                      public void onStartTrackingTouch(SeekBar s) { }
+                      public void onStopTrackingTouch(SeekBar s) { }
+                  });
+                  tools.addView(sb, new LinearLayout.LayoutParams((int) (170 * density),
+                          LinearLayout.LayoutParams.WRAP_CONTENT));
+
+                  TextView close = btn("✕");
+                  close.setOnClickListener(v -> stopSelf());
+                  tools.addView(close);
+
+                  panel.addView(tools);
+
+                  panelLp = new WindowManager.LayoutParams(
+                          WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT,
+                          WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+                          WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE, PixelFormat.TRANSLUCENT);
+                  panelLp.gravity = Gravity.TOP | Gravity.START;
+                  panelLp.x = (int) (20 * density);
+                  panelLp.y = (int) (120 * density);
+
+                  handle.setOnTouchListener(new View.OnTouchListener() {
+                      float sx, sy; int ox, oy; boolean moved;
+                      public boolean onTouch(View v, MotionEvent e) {
+                          switch (e.getActionMasked()) {
+                              case MotionEvent.ACTION_DOWN:
+                                  sx = e.getRawX(); sy = e.getRawY();
+                                  ox = panelLp.x; oy = panelLp.y; moved = false;
+                                  return true;
+                              case MotionEvent.ACTION_MOVE:
+                                  float dx = e.getRawX() - sx, dy = e.getRawY() - sy;
+                                  if (Math.abs(dx) + Math.abs(dy) > 15) moved = true;
+                                  panelLp.x = ox + (int) dx;
+                                  panelLp.y = oy + (int) dy;
+                                  wm.updateViewLayout(panel, panelLp);
+                                  return true;
+                              case MotionEvent.ACTION_UP:
+                                  if (!moved) {
+                                      collapsed = !collapsed;
+                                      tools.setVisibility(collapsed ? View.GONE : View.VISIBLE);
+                                  }
+                                  return true;
+                          }
+                          return false;
+                      }
+                  });
+                  wm.addView(panel, panelLp);
+              }
+
+              boolean onImgTouch(MotionEvent e) {
+                  int n = e.getPointerCount();
+                  switch (e.getActionMasked()) {
+                      case MotionEvent.ACTION_DOWN:
+                          lastX = e.getX(); lastY = e.getY();
+                          break;
+                      case MotionEvent.ACTION_POINTER_DOWN:
+                          prevDist = 0;
+                          break;
+                      case MotionEvent.ACTION_MOVE:
+                          if (n == 1) {
+                              m.postTranslate(e.getX() - lastX, e.getY() - lastY);
+                              lastX = e.getX(); lastY = e.getY();
+                          } else {
+                              float dx = e.getX(1) - e.getX(0), dy = e.getY(1) - e.getY(0);
+                              float dist = (float) Math.hypot(dx, dy);
+                              float ang = (float) Math.toDegrees(Math.atan2(dy, dx));
+                              float mx = (e.getX(0) + e.getX(1)) / 2, my = (e.getY(0) + e.getY(1)) / 2;
+                              if (prevDist > 0 && dist > 0) {
+                                  float da = ang - prevAngle;
+                                  if (da > 180) da -= 360;
+                                  if (da < -180) da += 360;
+                                  m.postTranslate(mx - prevMidX, my - prevMidY);
+                                  m.postScale(dist / prevDist, dist / prevDist, mx, my);
+                                  m.postRotate(da, mx, my);
+                              }
+                              prevDist = dist; prevAngle = ang; prevMidX = mx; prevMidY = my;
+                          }
+                          img.setImageMatrix(m);
+                          break;
+                      case MotionEvent.ACTION_POINTER_UP:
+                          int keep = e.getActionIndex() == 0 ? 1 : 0;
+                          lastX = e.getX(keep); lastY = e.getY(keep);
+                          prevDist = 0;
+                          break;
+                  }
+                  return true;
+              }
+
+              void loadImage(Uri uri) {
+                  try {
+                      Bitmap b = ImageDecoder.decodeBitmap(
+                              ImageDecoder.createSource(getContentResolver(), uri),
+                              (dec, info, src) -> {
+                                  int w = info.getSize().getWidth(), h = info.getSize().getHeight();
+                                  float s = Math.min(1f, 3000f / Math.max(w, h));
+                                  dec.setTargetSize(Math.max(1, Math.round(w * s)), Math.max(1, Math.round(h * s)));
+                              });
+                      img.setImageBitmap(b);
+                      img.setVisibility(View.VISIBLE);
+                      img.post(this::fitImage);
+                  } catch (Exception ex) {
+                      Toast.makeText(this, "ছবি খোলা যায়নি", Toast.LENGTH_LONG).show();
+                  }
+              }
+
+              void fitImage() {
+                  Drawable dr = img.getDrawable();
+                  if (dr == null) return;
+                  float vw = img.getWidth(), vh = img.getHeight();
+                  float bw = dr.getIntrinsicWidth(), bh = dr.getIntrinsicHeight();
+                  if (vw == 0 || vh == 0) { img.postDelayed(this::fitImage, 100); return; }
+                  if (bw <= 0 || bh <= 0) return;
+                  float s = Math.min(vw / bw, vh / bh);
+                  m.reset();
+                  m.postScale(s, s);
+                  m.postTranslate((vw - bw * s) / 2, (vh - bh * s) / 2);
+                  img.setImageMatrix(m);
+              }
+
+              @Override
+              public void onDestroy() {
+                  if (wm != null) {
+                      try { wm.removeView(img); } catch (Exception ignored) { }
+                      try { wm.removeView(panel); } catch (Exception ignored) { }
+                  }
+                  super.onDestroy();
+              }
+          }
+          EOF
+      - name: Build
+        run: gradle assembleDebug --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TraceOverlay-APK
+          path: app/build/outputs/apk/debug/app-debug.apk
