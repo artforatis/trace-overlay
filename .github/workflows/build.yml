@@ -16,6 +16,8 @@ jobs:
       - name: Create project
         run: |
           mkdir -p app/src/main/java/com/trace/overlay
+          mkdir -p app/src/main/res/drawable
+          mkdir -p app/src/main/res/mipmap-anydpi-v26
           cat > settings.gradle <<'EOF'
           pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
           dependencyResolutionManagement { repositories { google(); mavenCentral() } }
@@ -26,7 +28,8 @@ jobs:
           plugins { id 'com.android.application' version '8.5.2' apply false }
           EOF
           cat > gradle.properties <<'EOF'
-          org.gradle.jvmargs=-Xmx2048m
+          org.gradle.jvmargs=-Xmx3072m
+          android.useAndroidX=true
           EOF
           cat > app/build.gradle <<'EOF'
           plugins { id 'com.android.application' }
@@ -37,13 +40,16 @@ jobs:
                   applicationId "com.trace.overlay"
                   minSdk 30
                   targetSdk 34
-                  versionCode 1
-                  versionName "1.0"
+                  versionCode 2
+                  versionName "2.0"
               }
               compileOptions {
                   sourceCompatibility JavaVersion.VERSION_17
                   targetCompatibility JavaVersion.VERSION_17
               }
+          }
+          dependencies {
+              implementation 'com.google.android.gms:play-services-mlkit-subject-segmentation:16.0.0-beta1'
           }
           EOF
           cat > app/src/main/AndroidManifest.xml <<'EOF'
@@ -54,8 +60,13 @@ jobs:
               <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
               <application
                   android:label="Trace Overlay"
-                  android:icon="@android:drawable/ic_menu_gallery"
-                  android:theme="@android:style/Theme.DeviceDefault">
+                  android:icon="@mipmap/ic_launcher"
+                  android:roundIcon="@mipmap/ic_launcher"
+                  android:allowBackup="false"
+                  android:theme="@android:style/Theme.Material.NoActionBar">
+                  <meta-data
+                      android:name="com.google.mlkit.vision.DEPENDENCIES"
+                      android:value="subject_segment"/>
                   <activity android:name=".MainActivity" android:exported="true">
                       <intent-filter>
                           <action android:name="android.intent.action.MAIN"/>
@@ -73,23 +84,182 @@ jobs:
               </application>
           </manifest>
           EOF
+          cat > app/src/main/res/drawable/ic_bg.xml <<'EOF'
+          <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+              <gradient android:angle="135" android:startColor="#7B5CFF" android:endColor="#FF4D9D"/>
+          </shape>
+          EOF
+          cat > app/src/main/res/drawable/ic_fg.xml <<'EOF'
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="108dp" android:height="108dp"
+              android:viewportWidth="108" android:viewportHeight="108">
+              <path android:strokeColor="#99FFFFFF" android:strokeWidth="3.5" android:fillColor="#00000000"
+                  android:pathData="M36,30 H62 A4,4 0 0 1 66,34 V60 A4,4 0 0 1 62,64 H36 A4,4 0 0 1 32,60 V34 A4,4 0 0 1 36,30 Z"/>
+              <path android:strokeColor="#FFFFFFFF" android:strokeWidth="3.5" android:fillColor="#33FFFFFF"
+                  android:pathData="M46,40 H72 A4,4 0 0 1 76,44 V70 A4,4 0 0 1 72,74 H46 A4,4 0 0 1 42,70 V44 A4,4 0 0 1 46,40 Z"/>
+              <path android:fillColor="#FFFFFFFF" android:pathData="M50,70 L57,60 L62,65 L67,58 L73,70 Z"/>
+              <path android:fillColor="#FFC107" android:strokeColor="#40000000" android:strokeWidth="1"
+                  android:pathData="M42.83,69.51 L61.21,51.13 L66.87,56.79 L48.49,75.17 Z"/>
+              <path android:fillColor="#FF8A80" android:strokeColor="#40000000" android:strokeWidth="1"
+                  android:pathData="M61.21,51.13 L65.45,46.89 L71.11,52.55 L66.87,56.79 Z"/>
+              <path android:fillColor="#FFE0B2" android:pathData="M40,78 L42.83,69.51 L48.49,75.17 Z"/>
+              <path android:fillColor="#333333" android:pathData="M40,78 L41.4,73.8 L44.2,76.6 Z"/>
+          </vector>
+          EOF
+          cat > app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml <<'EOF'
+          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+              <background android:drawable="@drawable/ic_bg"/>
+              <foreground android:drawable="@drawable/ic_fg"/>
+          </adaptive-icon>
+          EOF
+          cat > app/src/main/java/com/trace/overlay/ImageTools.java <<'EOF'
+          package com.trace.overlay;
+
+          import android.graphics.Bitmap;
+          import android.graphics.drawable.GradientDrawable;
+
+          final class ImageTools {
+              static GradientDrawable round(int color, float r) {
+                  GradientDrawable g = new GradientDrawable();
+                  g.setColor(color);
+                  g.setCornerRadius(r);
+                  return g;
+              }
+
+              // Keeps only dark lines, everything else becomes transparent
+              static Bitmap lineArt(Bitmap src) {
+                  int w = src.getWidth(), h = src.getHeight();
+                  int[] px = new int[w * h];
+                  src.getPixels(px, 0, w, 0, 0, w, h);
+                  for (int i = 0; i < px.length; i++) {
+                      int c = px[i];
+                      int a = c >>> 24;
+                      int r = (c >> 16) & 255, g = (c >> 8) & 255, b = c & 255;
+                      int lum = (r * 299 + g * 587 + b * 114) / 1000;
+                      if (a < 100 || lum >= 140) {
+                          px[i] = 0;
+                      } else {
+                          int al = lum <= 60 ? 255 : (255 * (140 - lum)) / 80;
+                          al = al * a / 255;
+                          px[i] = al << 24;
+                      }
+                  }
+                  return Bitmap.createBitmap(px, w, h, Bitmap.Config.ARGB_8888);
+              }
+
+              // Simple background removal: erases the plain area connected to the edges
+              static Bitmap removeBackground(Bitmap src) {
+                  int w = src.getWidth(), h = src.getHeight();
+                  int[] px = new int[w * h];
+                  src.getPixels(px, 0, w, 0, 0, w, h);
+                  long sr = 0, sg = 0, sb = 0;
+                  int n = 0;
+                  for (int x = 0; x < w; x++) {
+                      int c1 = px[x], c2 = px[(h - 1) * w + x];
+                      sr += ((c1 >> 16) & 255) + ((c2 >> 16) & 255);
+                      sg += ((c1 >> 8) & 255) + ((c2 >> 8) & 255);
+                      sb += (c1 & 255) + (c2 & 255);
+                      n += 2;
+                  }
+                  for (int y = 0; y < h; y++) {
+                      int c1 = px[y * w], c2 = px[y * w + w - 1];
+                      sr += ((c1 >> 16) & 255) + ((c2 >> 16) & 255);
+                      sg += ((c1 >> 8) & 255) + ((c2 >> 8) & 255);
+                      sb += (c1 & 255) + (c2 & 255);
+                      n += 2;
+                  }
+                  int br = (int) (sr / n), bgc = (int) (sg / n), bb = (int) (sb / n);
+                  int tol2 = 55 * 55;
+                  boolean[] seen = new boolean[w * h];
+                  int[] q = new int[w * h];
+                  int head = 0, tail = 0;
+                  for (int x = 0; x < w; x++) {
+                      tail = push(x, px, seen, q, tail, br, bgc, bb, tol2);
+                      tail = push((h - 1) * w + x, px, seen, q, tail, br, bgc, bb, tol2);
+                  }
+                  for (int y = 0; y < h; y++) {
+                      tail = push(y * w, px, seen, q, tail, br, bgc, bb, tol2);
+                      tail = push(y * w + w - 1, px, seen, q, tail, br, bgc, bb, tol2);
+                  }
+                  while (head < tail) {
+                      int i = q[head++];
+                      int x = i % w, y = i / w;
+                      if (x > 0) tail = push(i - 1, px, seen, q, tail, br, bgc, bb, tol2);
+                      if (x < w - 1) tail = push(i + 1, px, seen, q, tail, br, bgc, bb, tol2);
+                      if (y > 0) tail = push(i - w, px, seen, q, tail, br, bgc, bb, tol2);
+                      if (y < h - 1) tail = push(i + w, px, seen, q, tail, br, bgc, bb, tol2);
+                  }
+                  for (int i = 0; i < px.length; i++) if (seen[i]) px[i] = 0;
+                  return Bitmap.createBitmap(px, w, h, Bitmap.Config.ARGB_8888);
+              }
+
+              private static int push(int j, int[] px, boolean[] seen, int[] q, int tail,
+                                      int br, int bgc, int bb, int tol2) {
+                  if (seen[j]) return tail;
+                  int c = px[j];
+                  boolean near;
+                  if ((c >>> 24) < 30) {
+                      near = true;
+                  } else {
+                      int dr = ((c >> 16) & 255) - br, dg = ((c >> 8) & 255) - bgc, db = (c & 255) - bb;
+                      near = dr * dr + dg * dg + db * db < tol2;
+                  }
+                  if (near) {
+                      seen[j] = true;
+                      q[tail++] = j;
+                  }
+                  return tail;
+              }
+          }
+          EOF
           cat > app/src/main/java/com/trace/overlay/MainActivity.java <<'EOF'
           package com.trace.overlay;
 
           import android.app.Activity;
           import android.content.Intent;
+          import android.graphics.Bitmap;
+          import android.graphics.Canvas;
+          import android.graphics.Color;
+          import android.graphics.ImageDecoder;
+          import android.graphics.Paint;
+          import android.graphics.Shader;
+          import android.graphics.Typeface;
+          import android.graphics.drawable.BitmapDrawable;
+          import android.graphics.drawable.GradientDrawable;
           import android.net.Uri;
           import android.os.Build;
           import android.os.Bundle;
           import android.provider.Settings;
           import android.view.Gravity;
+          import android.view.View;
           import android.widget.Button;
+          import android.widget.FrameLayout;
+          import android.widget.ImageView;
           import android.widget.LinearLayout;
+          import android.widget.ScrollView;
+          import android.widget.Switch;
           import android.widget.TextView;
           import android.widget.Toast;
+          import com.google.mlkit.vision.common.InputImage;
+          import com.google.mlkit.vision.segmentation.subject.SubjectSegmentation;
+          import com.google.mlkit.vision.segmentation.subject.SubjectSegmenter;
+          import com.google.mlkit.vision.segmentation.subject.SubjectSegmenterOptions;
+          import java.io.File;
+          import java.io.FileOutputStream;
+          import java.util.concurrent.ExecutorService;
+          import java.util.concurrent.Executors;
 
           public class MainActivity extends Activity {
               static final int PICK = 1;
+              static final int BG = 0xFF121218, CARD = 0xFF1E1E2A, ACCENT = 0xFF7B5CFF;
+              float d;
+              ImageView preview;
+              TextView statusTv, emptyTv;
+              Switch swBg, swLine;
+              Button permBtn, startBtn;
+              Bitmap original, processed;
+              int generation = 0;
+              final ExecutorService exec = Executors.newSingleThreadExecutor();
 
               @Override
               protected void onCreate(Bundle b) {
@@ -97,53 +267,108 @@ jobs:
                   if (Build.VERSION.SDK_INT >= 33) {
                       requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"}, 2);
                   }
-                  float d = getResources().getDisplayMetrics().density;
-                  LinearLayout l = new LinearLayout(this);
-                  l.setOrientation(LinearLayout.VERTICAL);
-                  l.setGravity(Gravity.CENTER_HORIZONTAL);
-                  int p = (int) (32 * d);
-                  l.setPadding(p, p, p, p);
+                  d = getResources().getDisplayMetrics().density;
+                  getWindow().setStatusBarColor(BG);
+                  getWindow().setNavigationBarColor(BG);
 
-                  TextView t = new TextView(this);
-                  t.setText("Trace Overlay");
-                  t.setTextSize(30);
-                  l.addView(t);
+                  ScrollView sv = new ScrollView(this);
+                  sv.setBackgroundColor(BG);
+                  LinearLayout root = new LinearLayout(this);
+                  root.setOrientation(LinearLayout.VERTICAL);
+                  root.setPadding(dp(20), dp(20), dp(20), dp(40));
+                  sv.addView(root);
 
-                  Button perm = new Button(this);
-                  perm.setText("১. অনুমতি দিন");
-                  perm.setOnClickListener(v -> startActivity(new Intent(
-                          Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                          Uri.parse("package:" + getPackageName()))));
-                  add(l, perm, d);
+                  LinearLayout header = new LinearLayout(this);
+                  header.setOrientation(LinearLayout.VERTICAL);
+                  GradientDrawable hg = new GradientDrawable(GradientDrawable.Orientation.TL_BR,
+                          new int[]{0xFF7B5CFF, 0xFFFF4D9D});
+                  hg.setCornerRadius(dp(22));
+                  header.setBackground(hg);
+                  header.setPadding(dp(24), dp(28), dp(24), dp(28));
+                  header.addView(text("✏  Trace Overlay", 30, Color.WHITE, true));
+                  header.addView(text("যেকোনো আর্ট অ্যাপের উপরে ছবি রেখে সহজে ট্রেস করুন", 15, 0xE6FFFFFF, false));
+                  root.addView(header);
 
-                  Button pick = new Button(this);
-                  pick.setText("২. ছবি বাছাই করে শুরু করুন");
-                  pick.setOnClickListener(v -> {
-                      if (!Settings.canDrawOverlays(this)) {
-                          Toast.makeText(this, "আগে ১ নম্বর বাটনে অনুমতি দিন", Toast.LENGTH_LONG).show();
-                          return;
+                  permBtn = button("", 0xFFFF9800);
+                  permBtn.setOnClickListener(v -> {
+                      if (Settings.canDrawOverlays(this)) {
+                          toast("অনুমতি আগেই দেওয়া আছে ✅");
+                      } else {
+                          startActivity(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                  Uri.parse("package:" + getPackageName())));
                       }
+                  });
+                  root.addView(card("ধাপ ১ · অনুমতি", permBtn));
+
+                  Button pickBtn = button("🖼  ছবি বাছাই করুন", ACCENT);
+                  pickBtn.setOnClickListener(v -> {
                       Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
                       i.addCategory(Intent.CATEGORY_OPENABLE);
                       i.setType("image/*");
                       startActivityForResult(i, PICK);
                   });
-                  add(l, pick, d);
 
-                  Button stop = new Button(this);
-                  stop.setText("বন্ধ করুন");
-                  stop.setOnClickListener(v -> stopService(new Intent(this, OverlayService.class)));
-                  add(l, stop, d);
+                  FrameLayout box = new FrameLayout(this);
+                  box.setBackground(checker());
+                  preview = new ImageView(this);
+                  preview.setScaleType(ImageView.ScaleType.FIT_CENTER);
+                  box.addView(preview, new FrameLayout.LayoutParams(-1, -1));
+                  emptyTv = text("এখনো কোনো ছবি বাছাই করা হয়নি", 15, 0xFF9090A8, false);
+                  emptyTv.setGravity(Gravity.CENTER);
+                  box.addView(emptyTv, new FrameLayout.LayoutParams(-1, -1));
+                  box.setLayoutParams(new LinearLayout.LayoutParams(-1, dp(280)));
 
-                  setContentView(l);
+                  swBg = toggle("✂  ব্যাকগ্রাউন্ড মুছে ফেলুন");
+                  swLine = toggle("🖊  শুধু কালো আউটলাইন রাখুন");
+                  swBg.setOnCheckedChangeListener((s, c) -> {
+                      if (c) swLine.setChecked(false);
+                      reprocess();
+                  });
+                  swLine.setOnCheckedChangeListener((s, c) -> {
+                      if (c) swBg.setChecked(false);
+                      reprocess();
+                  });
+                  statusTv = text("", 15, 0xFFB0B0C8, false);
+                  root.addView(card("ধাপ ২ · ছবি", pickBtn, box, swBg, swLine, statusTv));
+
+                  startBtn = button("▶  ট্রেসিং শুরু করুন", 0xFF00C853);
+                  startBtn.setOnClickListener(v -> startOverlay());
+                  Button stopBtn = button("■  বন্ধ করুন", 0xFF3A3A4A);
+                  stopBtn.setOnClickListener(v -> {
+                      stopService(new Intent(this, OverlayService.class));
+                      toast("বন্ধ করা হয়েছে");
+                  });
+                  root.addView(card("ধাপ ৩ · শুরু", startBtn, stopBtn));
+
+                  root.addView(card("টিপস", text(
+                          "• 🔓 সবুজ = ছবি সাজানোর মোড\n"
+                          + "• 🔒 লাল = আঁকার মোড\n"
+                          + "• ভিডিওর জন্য আর্ট অ্যাপের টাইমল্যাপস ব্যবহার করুন — তাতে উপরের ছবি ভিডিওতে আসবে না",
+                          14, 0xFFB0B0C8, false)));
+
+                  setContentView(sv);
+                  updateUi();
               }
 
-              void add(LinearLayout l, Button btn, float d) {
-                  LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                          LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-                  lp.topMargin = (int) (20 * d);
-                  btn.setTextSize(20);
-                  l.addView(btn, lp);
+              @Override
+              protected void onResume() {
+                  super.onResume();
+                  updateUi();
+              }
+
+              @Override
+              protected void onDestroy() {
+                  exec.shutdown();
+                  super.onDestroy();
+              }
+
+              void updateUi() {
+                  boolean ok = Settings.canDrawOverlays(this);
+                  permBtn.setText(ok ? "✅  অনুমতি দেওয়া আছে" : "🔑  অনুমতি দিন");
+                  permBtn.setBackground(ImageTools.round(ok ? 0xFF2E7D32 : 0xFFFF9800, dp(14)));
+                  boolean ready = ok && processed != null;
+                  startBtn.setEnabled(ready);
+                  startBtn.setAlpha(ready ? 1f : 0.4f);
               }
 
               @Override
@@ -151,15 +376,175 @@ jobs:
                   super.onActivityResult(rq, rs, data);
                   if (rq == PICK && rs == RESULT_OK && data != null && data.getData() != null) {
                       Uri u = data.getData();
-                      try {
-                          getContentResolver().takePersistableUriPermission(u, Intent.FLAG_GRANT_READ_URI_PERMISSION);
-                      } catch (Exception ignored) { }
-                      Intent s = new Intent(this, OverlayService.class);
-                      s.setData(u);
-                      s.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-                      startForegroundService(s);
-                      moveTaskToBack(true);
+                      status("⏳ ছবি খোলা হচ্ছে...");
+                      exec.execute(() -> {
+                          try {
+                              Bitmap b = decode(u);
+                              runOnUiThread(() -> {
+                                  original = b;
+                                  reprocess();
+                              });
+                          } catch (Exception e) {
+                              runOnUiThread(() -> status("❌ ছবিটি খোলা যায়নি"));
+                          }
+                      });
                   }
+              }
+
+              Bitmap decode(Uri uri) throws Exception {
+                  Bitmap b = ImageDecoder.decodeBitmap(
+                          ImageDecoder.createSource(getContentResolver(), uri),
+                          (dec, info, src) -> {
+                              dec.setAllocator(ImageDecoder.ALLOCATOR_SOFTWARE);
+                              int w = info.getSize().getWidth(), h = info.getSize().getHeight();
+                              float s = Math.min(1f, 2000f / Math.max(w, h));
+                              dec.setTargetSize(Math.max(1, Math.round(w * s)), Math.max(1, Math.round(h * s)));
+                          });
+                  if (b.getConfig() != Bitmap.Config.ARGB_8888) b = b.copy(Bitmap.Config.ARGB_8888, false);
+                  return b;
+              }
+
+              void reprocess() {
+                  if (original == null) return;
+                  final int gen = ++generation;
+                  final Bitmap src = original;
+                  processed = null;
+                  updateUi();
+                  if (swLine.isChecked()) {
+                      status("⏳ আউটলাইন আলাদা করা হচ্ছে...");
+                      exec.execute(() -> done(gen, ImageTools.lineArt(src), "✅ শুধু কালো আউটলাইন রাখা হয়েছে"));
+                  } else if (swBg.isChecked()) {
+                      status("⏳ ব্যাকগ্রাউন্ড মোছা হচ্ছে...");
+                      removeBg(gen, src);
+                  } else {
+                      done(gen, src, "✅ ছবি প্রস্তুত");
+                  }
+              }
+
+              void removeBg(int gen, Bitmap src) {
+                  try {
+                      SubjectSegmenter seg = SubjectSegmentation.getClient(
+                              new SubjectSegmenterOptions.Builder().enableForegroundBitmap().build());
+                      seg.process(InputImage.fromBitmap(src, 0))
+                              .addOnSuccessListener(r -> {
+                                  Bitmap fg = r.getForegroundBitmap();
+                                  if (fg != null) done(gen, fg, "✅ ব্যাকগ্রাউন্ড মোছা হয়েছে (AI)");
+                                  else fallback(gen, src);
+                              })
+                              .addOnFailureListener(e -> fallback(gen, src));
+                  } catch (Throwable t) {
+                      fallback(gen, src);
+                  }
+              }
+
+              void fallback(int gen, Bitmap src) {
+                  exec.execute(() -> done(gen, ImageTools.removeBackground(src), "✅ ব্যাকগ্রাউন্ড মোছা হয়েছে"));
+              }
+
+              void done(int gen, Bitmap b, String msg) {
+                  runOnUiThread(() -> {
+                      if (gen != generation) return;
+                      processed = b;
+                      preview.setImageBitmap(b);
+                      emptyTv.setVisibility(View.GONE);
+                      status(msg);
+                      updateUi();
+                  });
+              }
+
+              void startOverlay() {
+                  final Bitmap b = processed;
+                  if (b == null) return;
+                  if (!Settings.canDrawOverlays(this)) {
+                      toast("আগে অনুমতি দিন");
+                      return;
+                  }
+                  status("⏳ চালু হচ্ছে...");
+                  exec.execute(() -> {
+                      try {
+                          File f = new File(getFilesDir(), "trace.png");
+                          try (FileOutputStream o = new FileOutputStream(f)) {
+                              b.compress(Bitmap.CompressFormat.PNG, 100, o);
+                          }
+                          runOnUiThread(() -> {
+                              Intent s = new Intent(this, OverlayService.class);
+                              s.putExtra("path", f.getAbsolutePath());
+                              startForegroundService(s);
+                              status("✅ চালু হয়েছে — এখন আর্ট অ্যাপ খুলুন");
+                              moveTaskToBack(true);
+                          });
+                      } catch (Exception e) {
+                          runOnUiThread(() -> status("❌ চালু করা যায়নি"));
+                      }
+                  });
+              }
+
+              int dp(float v) { return Math.round(v * d); }
+
+              void status(String s) { statusTv.setText(s); }
+
+              void toast(String s) { Toast.makeText(this, s, Toast.LENGTH_SHORT).show(); }
+
+              TextView text(String s, float size, int color, boolean bold) {
+                  TextView t = new TextView(this);
+                  t.setText(s);
+                  t.setTextSize(size);
+                  t.setTextColor(color);
+                  if (bold) t.setTypeface(Typeface.DEFAULT_BOLD);
+                  return t;
+              }
+
+              Button button(String s, int color) {
+                  Button b = new Button(this);
+                  b.setText(s);
+                  b.setAllCaps(false);
+                  b.setTextSize(18);
+                  b.setTextColor(Color.WHITE);
+                  b.setBackground(ImageTools.round(color, dp(14)));
+                  b.setMinHeight(dp(56));
+                  b.setStateListAnimator(null);
+                  return b;
+              }
+
+              Switch toggle(String s) {
+                  Switch w = new Switch(this);
+                  w.setText(s);
+                  w.setTextSize(17);
+                  w.setTextColor(Color.WHITE);
+                  w.setPadding(0, dp(6), 0, dp(6));
+                  return w;
+              }
+
+              LinearLayout card(String title, View... views) {
+                  LinearLayout c = new LinearLayout(this);
+                  c.setOrientation(LinearLayout.VERTICAL);
+                  c.setBackground(ImageTools.round(CARD, dp(20)));
+                  c.setPadding(dp(18), dp(18), dp(18), dp(18));
+                  c.addView(text(title, 14, 0xFF9D8CFF, true));
+                  for (View v : views) {
+                      LinearLayout.LayoutParams lp = v.getLayoutParams() instanceof LinearLayout.LayoutParams
+                              ? (LinearLayout.LayoutParams) v.getLayoutParams()
+                              : new LinearLayout.LayoutParams(-1, -2);
+                      lp.topMargin = dp(12);
+                      c.addView(v, lp);
+                  }
+                  LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+                  lp.topMargin = dp(16);
+                  c.setLayoutParams(lp);
+                  return c;
+              }
+
+              BitmapDrawable checker() {
+                  Bitmap cb = Bitmap.createBitmap(40, 40, Bitmap.Config.ARGB_8888);
+                  Canvas c = new Canvas(cb);
+                  c.drawColor(0xFF2A2A36);
+                  Paint p = new Paint();
+                  p.setColor(0xFF34344A);
+                  c.drawRect(0, 0, 20, 20, p);
+                  c.drawRect(20, 20, 40, 40, p);
+                  BitmapDrawable bd = new BitmapDrawable(getResources(), cb);
+                  bd.setTileModeXY(Shader.TileMode.REPEAT, Shader.TileMode.REPEAT);
+                  return bd;
               }
           }
           EOF
@@ -173,19 +558,19 @@ jobs:
           import android.content.Intent;
           import android.content.pm.ServiceInfo;
           import android.graphics.Bitmap;
+          import android.graphics.BitmapFactory;
           import android.graphics.Color;
-          import android.graphics.ImageDecoder;
           import android.graphics.Matrix;
           import android.graphics.PixelFormat;
           import android.graphics.drawable.Drawable;
           import android.graphics.drawable.GradientDrawable;
-          import android.net.Uri;
           import android.os.Build;
           import android.os.IBinder;
           import android.view.Gravity;
           import android.view.MotionEvent;
           import android.view.View;
           import android.view.WindowManager;
+          import android.widget.FrameLayout;
           import android.widget.ImageView;
           import android.widget.LinearLayout;
           import android.widget.SeekBar;
@@ -193,13 +578,15 @@ jobs:
           import android.widget.Toast;
 
           public class OverlayService extends Service {
+              static final int GREEN = 0xFF00C853, RED = 0xFFE53935, GREY = 0xFF3A3A4A;
               WindowManager wm;
               ImageView img;
-              WindowManager.LayoutParams imgLp, panelLp;
+              FrameLayout frame;
+              WindowManager.LayoutParams imgLp, panelLp, frameLp;
               LinearLayout panel, tools;
-              TextView lockBtn;
+              TextView lockBtn, handle;
               Matrix m = new Matrix();
-              boolean locked = false, collapsed = false;
+              boolean locked = false, collapsed = false, frameShown = false;
               float lastX, lastY, prevDist, prevAngle, prevMidX, prevMidY, density;
 
               @Override public IBinder onBind(Intent i) { return null; }
@@ -208,7 +595,8 @@ jobs:
               public int onStartCommand(Intent intent, int flags, int startId) {
                   startFg();
                   if (wm == null) buildViews();
-                  if (intent != null && intent.getData() != null) loadImage(intent.getData());
+                  String path = intent != null ? intent.getStringExtra("path") : null;
+                  if (path != null) loadImage(path);
                   return START_NOT_STICKY;
               }
 
@@ -217,7 +605,8 @@ jobs:
                   nm.createNotificationChannel(new NotificationChannel("ov", "Trace Overlay", NotificationManager.IMPORTANCE_LOW));
                   Notification n = new Notification.Builder(this, "ov")
                           .setContentTitle("Trace Overlay চালু আছে")
-                          .setSmallIcon(android.R.drawable.ic_menu_gallery)
+                          .setContentText("বন্ধ করতে প্যানেলের ✕ চাপুন")
+                          .setSmallIcon(R.drawable.ic_fg)
                           .setOngoing(true).build();
                   if (Build.VERSION.SDK_INT >= 34) {
                       startForeground(1, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
@@ -225,6 +614,8 @@ jobs:
                       startForeground(1, n);
                   }
               }
+
+              int dp(float v) { return Math.round(v * density); }
 
               void buildViews() {
                   wm = (WindowManager) getSystemService(WINDOW_SERVICE);
@@ -240,7 +631,10 @@ jobs:
                   imgLp.alpha = 0.5f;
                   applyFlags();
                   wm.addView(img, imgLp);
+
+                  buildFrame();
                   buildPanel();
+                  updateLockUi(false);
               }
 
               void applyFlags() {
@@ -251,51 +645,96 @@ jobs:
                   imgLp.flags = f;
               }
 
-              TextView btn(String s) {
+              // Green dashed border + label, shown only in unlocked (arrange) mode
+              void buildFrame() {
+                  frame = new FrameLayout(this);
+                  GradientDrawable border = new GradientDrawable();
+                  border.setColor(0x00000000);
+                  border.setStroke(dp(5), GREEN, dp(18), dp(10));
+                  border.setCornerRadius(dp(12));
+                  View b = new View(this);
+                  b.setBackground(border);
+                  frame.addView(b, new FrameLayout.LayoutParams(-1, -1));
+
+                  TextView label = new TextView(this);
+                  label.setText("🔓 সাজানোর মোড — ছবি সরান, বড়-ছোট করুন, ঘোরান\nআঁকতে প্যানেলের সবুজ বাটন চাপুন");
+                  label.setTextColor(Color.BLACK);
+                  label.setTextSize(15);
+                  label.setGravity(Gravity.CENTER);
+                  label.setBackground(ImageTools.round(GREEN, dp(20)));
+                  label.setPadding(dp(16), dp(8), dp(16), dp(8));
+                  FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.CENTER_HORIZONTAL);
+                  lp.topMargin = dp(40);
+                  frame.addView(label, lp);
+
+                  frameLp = new WindowManager.LayoutParams(
+                          WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT,
+                          WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+                          WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+                                  | WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                                  | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+                                  | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+                          PixelFormat.TRANSLUCENT);
+                  frameLp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+              }
+
+              TextView chip(String s, int color) {
                   TextView t = new TextView(this);
                   t.setText(s);
-                  t.setTextSize(24);
+                  t.setTextSize(20);
                   t.setTextColor(Color.WHITE);
-                  int p = (int) (10 * density);
-                  t.setPadding(p, p / 2, p, p / 2);
+                  t.setGravity(Gravity.CENTER);
+                  t.setMinHeight(dp(44));
+                  t.setMinWidth(dp(44));
+                  t.setPadding(dp(12), dp(6), dp(12), dp(6));
+                  t.setBackground(ImageTools.round(color, dp(22)));
                   return t;
+              }
+
+              void addTool(View v) {
+                  LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
+                  lp.leftMargin = dp(6);
+                  tools.addView(v, lp);
               }
 
               void buildPanel() {
                   panel = new LinearLayout(this);
                   panel.setOrientation(LinearLayout.HORIZONTAL);
                   panel.setGravity(Gravity.CENTER_VERTICAL);
-                  GradientDrawable bg = new GradientDrawable();
-                  bg.setColor(0xEE222222);
-                  bg.setCornerRadius(24 * density);
-                  panel.setBackground(bg);
-                  int p = (int) (6 * density);
-                  panel.setPadding(p, p, p, p);
+                  panel.setBackground(ImageTools.round(0xF01A1A24, dp(28)));
+                  panel.setPadding(dp(6), dp(6), dp(6), dp(6));
 
-                  TextView handle = btn("☰");
+                  handle = chip("☰", GREEN);
                   panel.addView(handle);
 
                   tools = new LinearLayout(this);
                   tools.setOrientation(LinearLayout.HORIZONTAL);
                   tools.setGravity(Gravity.CENTER_VERTICAL);
 
-                  lockBtn = btn("🔓");
+                  lockBtn = chip("", GREEN);
+                  lockBtn.setTextSize(16);
                   lockBtn.setOnClickListener(v -> {
                       locked = !locked;
-                      applyFlags();
-                      wm.updateViewLayout(img, imgLp);
-                      lockBtn.setText(locked ? "🔒" : "🔓");
+                      updateLockUi(true);
                   });
-                  tools.addView(lockBtn);
+                  addTool(lockBtn);
 
-                  TextView eye = btn("👁");
-                  eye.setOnClickListener(v -> img.setVisibility(
-                          img.getVisibility() == View.VISIBLE ? View.INVISIBLE : View.VISIBLE));
-                  tools.addView(eye);
+                  TextView eye = chip("👁", GREY);
+                  eye.setOnClickListener(v -> {
+                      boolean vis = img.getVisibility() == View.VISIBLE;
+                      img.setVisibility(vis ? View.INVISIBLE : View.VISIBLE);
+                      eye.setText(vis ? "🙈" : "👁");
+                  });
+                  addTool(eye);
 
-                  TextView fit = btn("⟲");
+                  TextView fit = chip("⟲", GREY);
                   fit.setOnClickListener(v -> fitImage());
-                  tools.addView(fit);
+                  addTool(fit);
+
+                  TextView drop = new TextView(this);
+                  drop.setText("💧");
+                  drop.setTextSize(18);
+                  addTool(drop);
 
                   SeekBar sb = new SeekBar(this);
                   sb.setMax(75);
@@ -308,12 +747,11 @@ jobs:
                       public void onStartTrackingTouch(SeekBar s) { }
                       public void onStopTrackingTouch(SeekBar s) { }
                   });
-                  tools.addView(sb, new LinearLayout.LayoutParams((int) (170 * density),
-                          LinearLayout.LayoutParams.WRAP_CONTENT));
+                  tools.addView(sb, new LinearLayout.LayoutParams(dp(170), -2));
 
-                  TextView close = btn("✕");
+                  TextView close = chip("✕", GREY);
                   close.setOnClickListener(v -> stopSelf());
-                  tools.addView(close);
+                  addTool(close);
 
                   panel.addView(tools);
 
@@ -322,8 +760,8 @@ jobs:
                           WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
                           WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE, PixelFormat.TRANSLUCENT);
                   panelLp.gravity = Gravity.TOP | Gravity.START;
-                  panelLp.x = (int) (20 * density);
-                  panelLp.y = (int) (120 * density);
+                  panelLp.x = dp(20);
+                  panelLp.y = dp(120);
 
                   handle.setOnTouchListener(new View.OnTouchListener() {
                       float sx, sy; int ox, oy; boolean moved;
@@ -344,6 +782,7 @@ jobs:
                                   if (!moved) {
                                       collapsed = !collapsed;
                                       tools.setVisibility(collapsed ? View.GONE : View.VISIBLE);
+                                      panel.setAlpha(collapsed ? 0.7f : 1f);
                                   }
                                   return true;
                           }
@@ -351,6 +790,26 @@ jobs:
                       }
                   });
                   wm.addView(panel, panelLp);
+              }
+
+              void updateLockUi(boolean showToast) {
+                  applyFlags();
+                  wm.updateViewLayout(img, imgLp);
+                  int col = locked ? RED : GREEN;
+                  lockBtn.setText(locked ? "🔒 লক · আঁকুন" : "🔓 আনলক · সাজান");
+                  lockBtn.setBackground(ImageTools.round(col, dp(22)));
+                  handle.setBackground(ImageTools.round(col, dp(22)));
+                  if (locked && frameShown) {
+                      wm.removeView(frame);
+                      frameShown = false;
+                  } else if (!locked && !frameShown) {
+                      wm.addView(frame, frameLp);
+                      frameShown = true;
+                  }
+                  if (showToast) {
+                      Toast.makeText(this, locked ? "🔒 লক হয়েছে — এখন আঁকুন" : "🔓 আনলক — ছবি সাজান",
+                              Toast.LENGTH_SHORT).show();
+                  }
               }
 
               boolean onImgTouch(MotionEvent e) {
@@ -392,21 +851,15 @@ jobs:
                   return true;
               }
 
-              void loadImage(Uri uri) {
-                  try {
-                      Bitmap b = ImageDecoder.decodeBitmap(
-                              ImageDecoder.createSource(getContentResolver(), uri),
-                              (dec, info, src) -> {
-                                  int w = info.getSize().getWidth(), h = info.getSize().getHeight();
-                                  float s = Math.min(1f, 3000f / Math.max(w, h));
-                                  dec.setTargetSize(Math.max(1, Math.round(w * s)), Math.max(1, Math.round(h * s)));
-                              });
-                      img.setImageBitmap(b);
-                      img.setVisibility(View.VISIBLE);
-                      img.post(this::fitImage);
-                  } catch (Exception ex) {
+              void loadImage(String path) {
+                  Bitmap b = BitmapFactory.decodeFile(path);
+                  if (b == null) {
                       Toast.makeText(this, "ছবি খোলা যায়নি", Toast.LENGTH_LONG).show();
+                      return;
                   }
+                  img.setImageBitmap(b);
+                  img.setVisibility(View.VISIBLE);
+                  img.post(this::fitImage);
               }
 
               void fitImage() {
@@ -428,6 +881,9 @@ jobs:
                   if (wm != null) {
                       try { wm.removeView(img); } catch (Exception ignored) { }
                       try { wm.removeView(panel); } catch (Exception ignored) { }
+                      if (frameShown) {
+                          try { wm.removeView(frame); } catch (Exception ignored) { }
+                      }
                   }
                   super.onDestroy();
               }
