@@ -18,6 +18,8 @@ jobs:
           mkdir -p app/src/main/java/com/trace/overlay
           mkdir -p app/src/main/res/drawable
           mkdir -p app/src/main/res/mipmap-anydpi-v26
+          mkdir -p app/src/main/res/values
+          mkdir -p app/src/main/res/xml
           cat > settings.gradle <<'EOF'
           pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
           dependencyResolutionManagement { repositories { google(); mavenCentral() } }
@@ -40,8 +42,8 @@ jobs:
                   applicationId "com.trace.overlay"
                   minSdk 30
                   targetSdk 34
-                  versionCode 2
-                  versionName "2.0"
+                  versionCode 3
+                  versionName "3.0"
               }
               compileOptions {
                   sourceCompatibility JavaVersion.VERSION_17
@@ -58,6 +60,11 @@ jobs:
               <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
               <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/>
               <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+              <uses-permission android:name="android.permission.INTERNET"/>
+              <queries>
+                  <intent><action android:name="android.intent.action.TTS_SERVICE"/></intent>
+                  <intent><action android:name="android.speech.action.RECOGNIZE_SPEECH"/></intent>
+              </queries>
               <application
                   android:label="Trace Overlay"
                   android:icon="@mipmap/ic_launcher"
@@ -73,6 +80,13 @@ jobs:
                           <category android:name="android.intent.category.LAUNCHER"/>
                       </intent-filter>
                   </activity>
+                  <activity
+                      android:name=".AssistantActivity"
+                      android:exported="false"
+                      android:theme="@android:style/Theme.Material.Dialog.NoActionBar"
+                      android:taskAffinity="com.trace.overlay.ai"
+                      android:launchMode="singleTask"
+                      android:windowSoftInputMode="adjustResize"/>
                   <service
                       android:name=".OverlayService"
                       android:exported="false"
@@ -81,8 +95,32 @@ jobs:
                           android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                           android:value="Floating tracing reference image"/>
                   </service>
+                  <service
+                      android:name=".DrawService"
+                      android:exported="true"
+                      android:label="Trace Overlay ম্যাগনেট কলম"
+                      android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+                      <intent-filter>
+                          <action android:name="android.accessibilityservice.AccessibilityService"/>
+                      </intent-filter>
+                      <meta-data
+                          android:name="android.accessibilityservice"
+                          android:resource="@xml/draw_service"/>
+                  </service>
               </application>
           </manifest>
+          EOF
+          cat > app/src/main/res/values/strings.xml <<'EOF'
+          <resources>
+              <string name="acc_desc">ম্যাগনেট কলম: আপনার আঁকা রেখাকে কালো আউটলাইনের উপর বসিয়ে আর্ট অ্যাপে এঁকে দেয়। এটি স্ক্রিনের কোনো লেখা বা তথ্য পড়ে না।</string>
+          </resources>
+          EOF
+          cat > app/src/main/res/xml/draw_service.xml <<'EOF'
+          <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+              android:description="@string/acc_desc"
+              android:canPerformGestures="true"
+              android:canRetrieveWindowContent="false"
+              android:notificationTimeout="100"/>
           EOF
           cat > app/src/main/res/drawable/ic_bg.xml <<'EOF'
           <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
@@ -126,7 +164,6 @@ jobs:
                   return g;
               }
 
-              // Keeps only dark lines, everything else becomes transparent
               static Bitmap lineArt(Bitmap src) {
                   int w = src.getWidth(), h = src.getHeight();
                   int[] px = new int[w * h];
@@ -147,7 +184,6 @@ jobs:
                   return Bitmap.createBitmap(px, w, h, Bitmap.Config.ARGB_8888);
               }
 
-              // Simple background removal: erases the plain area connected to the edges
               static Bitmap removeBackground(Bitmap src) {
                   int w = src.getWidth(), h = src.getHeight();
                   int[] px = new int[w * h];
@@ -212,10 +248,59 @@ jobs:
               }
           }
           EOF
+          cat > app/src/main/java/com/trace/overlay/DrawService.java <<'EOF'
+          package com.trace.overlay;
+
+          import android.accessibilityservice.AccessibilityService;
+          import android.accessibilityservice.GestureDescription;
+          import android.content.Intent;
+          import android.graphics.Path;
+          import android.view.accessibility.AccessibilityEvent;
+          import java.util.List;
+
+          // Only performs drawing gestures. Reads nothing from the screen.
+          public class DrawService extends AccessibilityService {
+              static DrawService instance;
+
+              @Override
+              protected void onServiceConnected() {
+                  super.onServiceConnected();
+                  instance = this;
+              }
+
+              @Override
+              public boolean onUnbind(Intent i) {
+                  instance = null;
+                  return super.onUnbind(i);
+              }
+
+              @Override
+              public void onDestroy() {
+                  instance = null;
+                  super.onDestroy();
+              }
+
+              @Override public void onAccessibilityEvent(AccessibilityEvent e) { }
+              @Override public void onInterrupt() { }
+
+              void play(List<Path> paths, List<Long> durs, int i, Runnable done) {
+                  if (i >= paths.size()) { done.run(); return; }
+                  GestureDescription g = new GestureDescription.Builder()
+                          .addStroke(new GestureDescription.StrokeDescription(paths.get(i), 0, durs.get(i)))
+                          .build();
+                  boolean ok = dispatchGesture(g, new GestureResultCallback() {
+                      @Override public void onCompleted(GestureDescription d) { play(paths, durs, i + 1, done); }
+                      @Override public void onCancelled(GestureDescription d) { done.run(); }
+                  }, null);
+                  if (!ok) done.run();
+              }
+          }
+          EOF
           cat > app/src/main/java/com/trace/overlay/MainActivity.java <<'EOF'
           package com.trace.overlay;
 
           import android.app.Activity;
+          import android.content.ClipData;
           import android.content.Intent;
           import android.graphics.Bitmap;
           import android.graphics.Canvas;
@@ -246,19 +331,25 @@ jobs:
           import com.google.mlkit.vision.segmentation.subject.SubjectSegmenterOptions;
           import java.io.File;
           import java.io.FileOutputStream;
+          import java.util.ArrayList;
+          import java.util.List;
+          import java.util.concurrent.CountDownLatch;
           import java.util.concurrent.ExecutorService;
           import java.util.concurrent.Executors;
+          import java.util.concurrent.TimeUnit;
 
           public class MainActivity extends Activity {
               static final int PICK = 1;
               static final int BG = 0xFF121218, CARD = 0xFF1E1E2A, ACCENT = 0xFF7B5CFF;
               float d;
               ImageView preview;
-              TextView statusTv, emptyTv;
+              TextView statusTv, emptyTv, pageLbl;
+              LinearLayout navRow;
               Switch swBg, swLine;
-              Button permBtn, startBtn;
+              Button permBtn, startBtn, accBtn;
               Bitmap original, processed;
-              int generation = 0;
+              final List<Uri> pages = new ArrayList<>();
+              int cur = 0, generation = 0;
               final ExecutorService exec = Executors.newSingleThreadExecutor();
 
               @Override
@@ -300,11 +391,12 @@ jobs:
                   });
                   root.addView(card("ধাপ ১ · অনুমতি", permBtn));
 
-                  Button pickBtn = button("🖼  ছবি বাছাই করুন", ACCENT);
+                  Button pickBtn = button("🖼  ছবি বাছাই করুন (একাধিক দেওয়া যাবে)", ACCENT);
                   pickBtn.setOnClickListener(v -> {
                       Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
                       i.addCategory(Intent.CATEGORY_OPENABLE);
                       i.setType("image/*");
+                      i.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
                       startActivityForResult(i, PICK);
                   });
 
@@ -318,6 +410,20 @@ jobs:
                   box.addView(emptyTv, new FrameLayout.LayoutParams(-1, -1));
                   box.setLayoutParams(new LinearLayout.LayoutParams(-1, dp(280)));
 
+                  navRow = new LinearLayout(this);
+                  navRow.setOrientation(LinearLayout.HORIZONTAL);
+                  navRow.setGravity(Gravity.CENTER_VERTICAL);
+                  Button prevB = button("◀", 0xFF3A3A4A);
+                  prevB.setOnClickListener(v -> { if (cur > 0) { cur--; loadPreview(); } });
+                  pageLbl = text("", 16, Color.WHITE, true);
+                  pageLbl.setGravity(Gravity.CENTER);
+                  Button nextB = button("▶", 0xFF3A3A4A);
+                  nextB.setOnClickListener(v -> { if (cur < pages.size() - 1) { cur++; loadPreview(); } });
+                  navRow.addView(prevB, new LinearLayout.LayoutParams(0, -2, 1f));
+                  navRow.addView(pageLbl, new LinearLayout.LayoutParams(0, -2, 1f));
+                  navRow.addView(nextB, new LinearLayout.LayoutParams(0, -2, 1f));
+                  navRow.setVisibility(View.GONE);
+
                   swBg = toggle("✂  ব্যাকগ্রাউন্ড মুছে ফেলুন");
                   swLine = toggle("🖊  শুধু কালো আউটলাইন রাখুন");
                   swBg.setOnCheckedChangeListener((s, c) -> {
@@ -329,7 +435,7 @@ jobs:
                       reprocess();
                   });
                   statusTv = text("", 15, 0xFFB0B0C8, false);
-                  root.addView(card("ধাপ ২ · ছবি", pickBtn, box, swBg, swLine, statusTv));
+                  root.addView(card("ধাপ ২ · ছবি", pickBtn, box, navRow, swBg, swLine, statusTv));
 
                   startBtn = button("▶  ট্রেসিং শুরু করুন", 0xFF00C853);
                   startBtn.setOnClickListener(v -> startOverlay());
@@ -340,10 +446,25 @@ jobs:
                   });
                   root.addView(card("ধাপ ৩ · শুরু", startBtn, stopBtn));
 
+                  accBtn = button("", 0xFFFF9800);
+                  accBtn.setOnClickListener(v -> {
+                      try { startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)); } catch (Exception ignored) { }
+                      toast("\"Trace Overlay ম্যাগনেট কলম\" খুঁজে চালু করুন");
+                  });
+                  root.addView(card("🧲 ম্যাগনেট কলম",
+                          text("চালু থাকলে কালো লাইনের কাছ দিয়ে আঁকলে আঁকাটা নিজে থেকে লাইনের উপর বসে যায়।", 14, 0xFFB0B0C8, false),
+                          accBtn));
+
+                  Button aiBtn = button("🤖  AI সহকারী খুলুন", ACCENT);
+                  aiBtn.setOnClickListener(v -> startActivity(new Intent(this, AssistantActivity.class)));
+                  root.addView(card("🤖 AI আর্ট সহকারী", aiBtn));
+
                   root.addView(card("টিপস", text(
                           "• 🔓 সবুজ = ছবি সাজানোর মোড\n"
                           + "• 🔒 লাল = আঁকার মোড\n"
-                          + "• ভিডিওর জন্য আর্ট অ্যাপের টাইমল্যাপস ব্যবহার করুন — তাতে উপরের ছবি ভিডিওতে আসবে না",
+                          + "• 🎨 / ⚫ বাটনে রঙিন আর আউটলাইন বদলান\n"
+                          + "• ◀ ▶ দিয়ে পাতা বদলান\n"
+                          + "• ভিডিওর জন্য আর্ট অ্যাপের টাইমল্যাপস ব্যবহার করুন",
                           14, 0xFFB0B0C8, false)));
 
                   setContentView(sv);
@@ -366,7 +487,10 @@ jobs:
                   boolean ok = Settings.canDrawOverlays(this);
                   permBtn.setText(ok ? "✅  অনুমতি দেওয়া আছে" : "🔑  অনুমতি দিন");
                   permBtn.setBackground(ImageTools.round(ok ? 0xFF2E7D32 : 0xFFFF9800, dp(14)));
-                  boolean ready = ok && processed != null;
+                  boolean acc = DrawService.instance != null;
+                  accBtn.setText(acc ? "✅  ম্যাগনেট কলম চালু আছে" : "⚙  Accessibility-তে চালু করুন");
+                  accBtn.setBackground(ImageTools.round(acc ? 0xFF2E7D32 : 0xFFFF9800, dp(14)));
+                  boolean ready = ok && processed != null && !pages.isEmpty();
                   startBtn.setEnabled(ready);
                   startBtn.setAlpha(ready ? 1f : 0.4f);
               }
@@ -374,21 +498,47 @@ jobs:
               @Override
               protected void onActivityResult(int rq, int rs, Intent data) {
                   super.onActivityResult(rq, rs, data);
-                  if (rq == PICK && rs == RESULT_OK && data != null && data.getData() != null) {
-                      Uri u = data.getData();
-                      status("⏳ ছবি খোলা হচ্ছে...");
-                      exec.execute(() -> {
-                          try {
-                              Bitmap b = decode(u);
-                              runOnUiThread(() -> {
-                                  original = b;
-                                  reprocess();
-                              });
-                          } catch (Exception e) {
-                              runOnUiThread(() -> status("❌ ছবিটি খোলা যায়নি"));
-                          }
-                      });
+                  if (rq != PICK || rs != RESULT_OK || data == null) return;
+                  List<Uri> got = new ArrayList<>();
+                  ClipData cd = data.getClipData();
+                  if (cd != null) {
+                      for (int i = 0; i < cd.getItemCount(); i++) got.add(cd.getItemAt(i).getUri());
+                  } else if (data.getData() != null) {
+                      got.add(data.getData());
                   }
+                  if (got.isEmpty()) return;
+                  for (Uri u : got) {
+                      try {
+                          getContentResolver().takePersistableUriPermission(u, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                      } catch (Exception ignored) { }
+                  }
+                  pages.clear();
+                  pages.addAll(got);
+                  cur = 0;
+                  loadPreview();
+              }
+
+              void loadPreview() {
+                  if (pages.isEmpty()) return;
+                  pageLbl.setText("পাতা " + (cur + 1) + " / " + pages.size());
+                  navRow.setVisibility(pages.size() > 1 ? View.VISIBLE : View.GONE);
+                  final Uri u = pages.get(cur);
+                  final int gen = ++generation;
+                  processed = null;
+                  updateUi();
+                  status("⏳ ছবি খোলা হচ্ছে...");
+                  exec.execute(() -> {
+                      try {
+                          Bitmap b = decode(u);
+                          runOnUiThread(() -> {
+                              if (gen != generation) return;
+                              original = b;
+                              reprocess();
+                          });
+                      } catch (Exception e) {
+                          runOnUiThread(() -> status("❌ ছবিটি খোলা যায়নি"));
+                      }
+                  });
               }
 
               Bitmap decode(Uri uri) throws Exception {
@@ -404,41 +554,35 @@ jobs:
                   return b;
               }
 
+              Bitmap bgSync(Bitmap src) {
+                  try {
+                      SubjectSegmenter seg = SubjectSegmentation.getClient(
+                              new SubjectSegmenterOptions.Builder().enableForegroundBitmap().build());
+                      final Bitmap[] out = new Bitmap[1];
+                      final CountDownLatch latch = new CountDownLatch(1);
+                      seg.process(InputImage.fromBitmap(src, 0))
+                              .addOnSuccessListener(r -> { out[0] = r.getForegroundBitmap(); latch.countDown(); })
+                              .addOnFailureListener(e -> latch.countDown());
+                      latch.await(40, TimeUnit.SECONDS);
+                      if (out[0] != null) return out[0];
+                  } catch (Throwable ignored) { }
+                  return ImageTools.removeBackground(src);
+              }
+
               void reprocess() {
                   if (original == null) return;
                   final int gen = ++generation;
                   final Bitmap src = original;
+                  final boolean line = swLine.isChecked(), bg = swBg.isChecked();
                   processed = null;
                   updateUi();
-                  if (swLine.isChecked()) {
-                      status("⏳ আউটলাইন আলাদা করা হচ্ছে...");
-                      exec.execute(() -> done(gen, ImageTools.lineArt(src), "✅ শুধু কালো আউটলাইন রাখা হয়েছে"));
-                  } else if (swBg.isChecked()) {
-                      status("⏳ ব্যাকগ্রাউন্ড মোছা হচ্ছে...");
-                      removeBg(gen, src);
-                  } else {
-                      done(gen, src, "✅ ছবি প্রস্তুত");
-                  }
-              }
-
-              void removeBg(int gen, Bitmap src) {
-                  try {
-                      SubjectSegmenter seg = SubjectSegmentation.getClient(
-                              new SubjectSegmenterOptions.Builder().enableForegroundBitmap().build());
-                      seg.process(InputImage.fromBitmap(src, 0))
-                              .addOnSuccessListener(r -> {
-                                  Bitmap fg = r.getForegroundBitmap();
-                                  if (fg != null) done(gen, fg, "✅ ব্যাকগ্রাউন্ড মোছা হয়েছে (AI)");
-                                  else fallback(gen, src);
-                              })
-                              .addOnFailureListener(e -> fallback(gen, src));
-                  } catch (Throwable t) {
-                      fallback(gen, src);
-                  }
-              }
-
-              void fallback(int gen, Bitmap src) {
-                  exec.execute(() -> done(gen, ImageTools.removeBackground(src), "✅ ব্যাকগ্রাউন্ড মোছা হয়েছে"));
+                  if (line) status("⏳ আউটলাইন আলাদা করা হচ্ছে...");
+                  else if (bg) status("⏳ ব্যাকগ্রাউন্ড মোছা হচ্ছে...");
+                  exec.execute(() -> {
+                      Bitmap r = line ? ImageTools.lineArt(src) : bg ? bgSync(src) : src;
+                      done(gen, r, line ? "✅ শুধু কালো আউটলাইন রাখা হয়েছে"
+                              : bg ? "✅ ব্যাকগ্রাউন্ড মোছা হয়েছে" : "✅ ছবি প্রস্তুত");
+                  });
               }
 
               void done(int gen, Bitmap b, String msg) {
@@ -452,29 +596,47 @@ jobs:
                   });
               }
 
+              void save(Bitmap b, File f) throws Exception {
+                  try (FileOutputStream o = new FileOutputStream(f)) {
+                      b.compress(Bitmap.CompressFormat.PNG, 100, o);
+                  }
+              }
+
               void startOverlay() {
-                  final Bitmap b = processed;
-                  if (b == null) return;
+                  if (pages.isEmpty()) return;
                   if (!Settings.canDrawOverlays(this)) {
                       toast("আগে অনুমতি দিন");
                       return;
                   }
-                  status("⏳ চালু হচ্ছে...");
+                  final List<Uri> list = new ArrayList<>(pages);
+                  final boolean bg = swBg.isChecked(), line = swLine.isChecked();
+                  startBtn.setEnabled(false);
                   exec.execute(() -> {
                       try {
-                          File f = new File(getFilesDir(), "trace.png");
-                          try (FileOutputStream o = new FileOutputStream(f)) {
-                              b.compress(Bitmap.CompressFormat.PNG, 100, o);
+                          File dir = getFilesDir();
+                          for (int i = 0; i < list.size(); i++) {
+                              final int n = i + 1;
+                              runOnUiThread(() -> status("⏳ পাতা " + n + "/" + list.size() + " প্রস্তুত হচ্ছে..."));
+                              Bitmap o = decode(list.get(i));
+                              Bitmap color = bg ? bgSync(o) : o;
+                              Bitmap ln = ImageTools.lineArt(o);
+                              save(color, new File(dir, "page_" + i + "_color.png"));
+                              save(ln, new File(dir, "page_" + i + "_line.png"));
                           }
                           runOnUiThread(() -> {
                               Intent s = new Intent(this, OverlayService.class);
-                              s.putExtra("path", f.getAbsolutePath());
+                              s.putExtra("count", list.size());
+                              s.putExtra("line", line);
                               startForegroundService(s);
                               status("✅ চালু হয়েছে — এখন আর্ট অ্যাপ খুলুন");
+                              updateUi();
                               moveTaskToBack(true);
                           });
                       } catch (Exception e) {
-                          runOnUiThread(() -> status("❌ চালু করা যায়নি"));
+                          runOnUiThread(() -> {
+                              status("❌ চালু করা যায়নি");
+                              updateUi();
+                          });
                       }
                   });
               }
@@ -548,6 +710,509 @@ jobs:
               }
           }
           EOF
+          cat > app/src/main/java/com/trace/overlay/AssistantActivity.java <<'EOF'
+          package com.trace.overlay;
+
+          import android.app.Activity;
+          import android.content.Intent;
+          import android.content.SharedPreferences;
+          import android.graphics.Bitmap;
+          import android.graphics.BitmapFactory;
+          import android.graphics.Canvas;
+          import android.graphics.Color;
+          import android.graphics.Typeface;
+          import android.os.Bundle;
+          import android.speech.RecognizerIntent;
+          import android.speech.tts.TextToSpeech;
+          import android.text.InputType;
+          import android.util.Base64;
+          import android.util.DisplayMetrics;
+          import android.view.Gravity;
+          import android.view.View;
+          import android.view.WindowManager;
+          import android.widget.AdapterView;
+          import android.widget.ArrayAdapter;
+          import android.widget.Button;
+          import android.widget.CheckBox;
+          import android.widget.EditText;
+          import android.widget.LinearLayout;
+          import android.widget.ScrollView;
+          import android.widget.Spinner;
+          import android.widget.TextView;
+          import android.widget.Toast;
+          import org.json.JSONArray;
+          import org.json.JSONObject;
+          import java.io.BufferedReader;
+          import java.io.ByteArrayOutputStream;
+          import java.io.File;
+          import java.io.InputStream;
+          import java.io.InputStreamReader;
+          import java.io.OutputStream;
+          import java.net.HttpURLConnection;
+          import java.net.URL;
+          import java.nio.charset.StandardCharsets;
+          import java.util.ArrayList;
+          import java.util.List;
+          import java.util.Locale;
+          import java.util.concurrent.ExecutorService;
+          import java.util.concurrent.Executors;
+
+          public class AssistantActivity extends Activity {
+              static final int VOICE = 5;
+              static final List<String[]> history = new ArrayList<>();
+              static final String[] PROVIDERS = {"Gemini (Google)", "OpenAI / অন্যান্য সামঞ্জস্যপূর্ণ", "Claude (Anthropic)"};
+              static final String[] DEF_MODEL = {"gemini-flash-latest", "gpt-4o-mini", "claude-sonnet-5"};
+              static final String SYS = "তুমি একজন অভিজ্ঞ, বন্ধুসুলভ আর্ট শিক্ষক। ব্যবহারকারী একজন নতুন আর্টিস্ট, "
+                      + "Samsung ট্যাবে ডিজিটাল আর্ট শিখছেন। সবসময় সহজ বাংলায় উত্তর দাও। উত্তর ছোট রাখো এবং "
+                      + "ছোট ছোট ধাপে ভাগ করে দাও। ছবি দেওয়া থাকলে সেটা দেখে নির্দিষ্ট পরামর্শ দাও: রেখা, অনুপাত, "
+                      + "আলো-ছায়া, রঙ আর কম্পোজিশন কীভাবে ভালো করা যায়। ** বা # এর মতো Markdown চিহ্ন ব্যবহার করবে না।";
+              float d;
+              SharedPreferences prefs;
+              LinearLayout chat, settingsBox, urlBox;
+              ScrollView chatScroll;
+              EditText input, keyEt, modelEt, urlEt;
+              Spinner providerSp;
+              CheckBox imgCb, speakCb;
+              Button sendBtn;
+              TextToSpeech tts;
+              boolean ttsOk = false;
+              final ExecutorService exec = Executors.newSingleThreadExecutor();
+
+              @Override
+              protected void onCreate(Bundle b) {
+                  super.onCreate(b);
+                  d = getResources().getDisplayMetrics().density;
+                  prefs = getSharedPreferences("ai", MODE_PRIVATE);
+
+                  LinearLayout root = new LinearLayout(this);
+                  root.setOrientation(LinearLayout.VERTICAL);
+                  root.setBackground(ImageTools.round(0xFF121218, dp(20)));
+                  root.setPadding(dp(16), dp(16), dp(16), dp(16));
+
+                  LinearLayout top = new LinearLayout(this);
+                  top.setOrientation(LinearLayout.HORIZONTAL);
+                  top.setGravity(Gravity.CENTER_VERTICAL);
+                  TextView title = text("🤖 AI আর্ট সহকারী", 20, Color.WHITE);
+                  title.setTypeface(Typeface.DEFAULT_BOLD);
+                  top.addView(title, new LinearLayout.LayoutParams(0, -2, 1f));
+                  Button gear = btn("⚙", 0xFF3A3A4A);
+                  gear.setOnClickListener(v -> settingsBox.setVisibility(
+                          settingsBox.getVisibility() == View.VISIBLE ? View.GONE : View.VISIBLE));
+                  top.addView(gear);
+                  Button close = btn("✕", 0xFF3A3A4A);
+                  close.setOnClickListener(v -> finish());
+                  LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(-2, -2);
+                  clp.leftMargin = dp(8);
+                  top.addView(close, clp);
+                  root.addView(top);
+
+                  settingsBox = new LinearLayout(this);
+                  settingsBox.setOrientation(LinearLayout.VERTICAL);
+                  settingsBox.setBackground(ImageTools.round(0xFF1E1E2A, dp(16)));
+                  settingsBox.setPadding(dp(14), dp(10), dp(14), dp(14));
+                  settingsBox.addView(text("AI সেবা বাছুন", 14, 0xFF9D8CFF));
+                  providerSp = new Spinner(this);
+                  providerSp.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, PROVIDERS));
+                  settingsBox.addView(providerSp);
+                  settingsBox.addView(text("API Key", 14, 0xFF9D8CFF));
+                  keyEt = edit("এখানে API Key পেস্ট করুন");
+                  keyEt.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+                  settingsBox.addView(keyEt);
+                  settingsBox.addView(text("মডেলের নাম", 14, 0xFF9D8CFF));
+                  modelEt = edit("মডেল");
+                  settingsBox.addView(modelEt);
+                  urlBox = new LinearLayout(this);
+                  urlBox.setOrientation(LinearLayout.VERTICAL);
+                  urlBox.addView(text("Base URL", 14, 0xFF9D8CFF));
+                  urlEt = edit("https://api.openai.com/v1");
+                  urlBox.addView(urlEt);
+                  settingsBox.addView(urlBox);
+                  Button saveBtn = btn("💾  সেভ করুন", 0xFF00C853);
+                  saveBtn.setOnClickListener(v -> {
+                      prefs.edit()
+                              .putInt("provider", providerSp.getSelectedItemPosition())
+                              .putString("key", keyEt.getText().toString().trim())
+                              .putString("model", modelEt.getText().toString().trim())
+                              .putString("url", urlEt.getText().toString().trim())
+                              .apply();
+                      toast("✅ সেভ হয়েছে");
+                      settingsBox.setVisibility(View.GONE);
+                  });
+                  LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(-1, -2);
+                  slp.topMargin = dp(10);
+                  settingsBox.addView(saveBtn, slp);
+                  LinearLayout.LayoutParams sblp = new LinearLayout.LayoutParams(-1, -2);
+                  sblp.topMargin = dp(10);
+                  root.addView(settingsBox, sblp);
+
+                  int prov = prefs.getInt("provider", 0);
+                  keyEt.setText(prefs.getString("key", ""));
+                  modelEt.setText(prefs.getString("model", DEF_MODEL[prov]));
+                  urlEt.setText(prefs.getString("url", "https://api.openai.com/v1"));
+                  providerSp.setSelection(prov);
+                  urlBox.setVisibility(prov == 1 ? View.VISIBLE : View.GONE);
+                  providerSp.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+                      public void onItemSelected(AdapterView<?> p, View v, int pos, long id) {
+                          String cur = modelEt.getText().toString().trim();
+                          boolean isDef = cur.isEmpty();
+                          for (String s : DEF_MODEL) if (s.equals(cur)) isDef = true;
+                          if (isDef) modelEt.setText(DEF_MODEL[pos]);
+                          urlBox.setVisibility(pos == 1 ? View.VISIBLE : View.GONE);
+                      }
+                      public void onNothingSelected(AdapterView<?> p) { }
+                  });
+                  settingsBox.setVisibility(prefs.getString("key", "").isEmpty() ? View.VISIBLE : View.GONE);
+
+                  chatScroll = new ScrollView(this);
+                  chat = new LinearLayout(this);
+                  chat.setOrientation(LinearLayout.VERTICAL);
+                  chatScroll.addView(chat);
+                  LinearLayout.LayoutParams chlp = new LinearLayout.LayoutParams(-1, 0, 1f);
+                  chlp.topMargin = dp(8);
+                  root.addView(chatScroll, chlp);
+
+                  imgCb = new CheckBox(this);
+                  imgCb.setText("📷 বর্তমান ছবিটাও পাঠাও");
+                  imgCb.setTextColor(Color.WHITE);
+                  imgCb.setEnabled(currentFile() != null);
+                  root.addView(imgCb);
+                  speakCb = new CheckBox(this);
+                  speakCb.setText("🔊 উত্তর পড়ে শোনাও");
+                  speakCb.setTextColor(Color.WHITE);
+                  speakCb.setChecked(prefs.getBoolean("speak", true));
+                  speakCb.setOnCheckedChangeListener((c, v) -> prefs.edit().putBoolean("speak", v).apply());
+                  root.addView(speakCb);
+
+                  LinearLayout inRow = new LinearLayout(this);
+                  inRow.setOrientation(LinearLayout.HORIZONTAL);
+                  inRow.setGravity(Gravity.CENTER_VERTICAL);
+                  Button mic = btn("🎤", 0xFFFF4D9D);
+                  mic.setOnClickListener(v -> voice());
+                  inRow.addView(mic);
+                  input = edit("বাংলায় প্রশ্ন লিখুন বা 🎤 চাপুন");
+                  input.setMaxLines(4);
+                  LinearLayout.LayoutParams ilp = new LinearLayout.LayoutParams(0, -2, 1f);
+                  ilp.leftMargin = dp(8);
+                  ilp.rightMargin = dp(8);
+                  inRow.addView(input, ilp);
+                  sendBtn = btn("➤", 0xFF7B5CFF);
+                  sendBtn.setOnClickListener(v -> send(input.getText().toString()));
+                  inRow.addView(sendBtn);
+                  LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(-1, -2);
+                  rlp.topMargin = dp(6);
+                  root.addView(inRow, rlp);
+
+                  setContentView(root);
+                  DisplayMetrics dm = getResources().getDisplayMetrics();
+                  getWindow().setLayout(Math.min(dp(760), (int) (dm.widthPixels * 0.95f)), (int) (dm.heightPixels * 0.85f));
+                  getWindow().setBackgroundDrawableResource(android.R.color.transparent);
+                  getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+                  setFinishOnTouchOutside(false);
+
+                  tts = new TextToSpeech(this, st -> {
+                      if (st == TextToSpeech.SUCCESS) {
+                          int r = tts.setLanguage(new Locale("bn", "BD"));
+                          if (r < 0) r = tts.setLanguage(new Locale("bn", "IN"));
+                          ttsOk = r >= 0;
+                      }
+                  });
+
+                  if (history.isEmpty()) {
+                      addBubble("হ্যালো! 🎨 আঁকা নিয়ে যেকোনো প্রশ্ন বাংলায় লিখুন বা 🎤 চেপে বলুন। চাইলে 📷 টিক দিয়ে আপনার ছবিটাও দেখাতে পারেন।", false);
+                  } else {
+                      for (String[] h : history) addBubble(h[1], h[0].equals("user"));
+                  }
+              }
+
+              @Override
+              protected void onDestroy() {
+                  if (tts != null) { tts.stop(); tts.shutdown(); }
+                  exec.shutdown();
+                  super.onDestroy();
+              }
+
+              void send(String q) {
+                  q = q.trim();
+                  if (q.isEmpty()) return;
+                  final String key = prefs.getString("key", "");
+                  if (key.isEmpty()) {
+                      toast("আগে ⚙ থেকে API Key দিন");
+                      settingsBox.setVisibility(View.VISIBLE);
+                      return;
+                  }
+                  input.setText("");
+                  addBubble(q, true);
+                  history.add(new String[]{"user", q});
+                  final TextView wait = addBubble("⏳ ভাবছি...", false);
+                  sendBtn.setEnabled(false);
+                  final boolean withImg = imgCb.isChecked() && imgCb.isEnabled();
+                  final int prov = prefs.getInt("provider", 0);
+                  final String model = prefs.getString("model", DEF_MODEL[prov]);
+                  final String url = prefs.getString("url", "https://api.openai.com/v1");
+                  final List<String[]> hist = new ArrayList<>(history);
+                  exec.execute(() -> {
+                      String ans;
+                      try {
+                          String img = withImg ? currentImage() : null;
+                          ans = clean(ask(prov, key, model, url, hist, img));
+                          if (ans.isEmpty()) ans = "❌ কোনো উত্তর আসেনি";
+                      } catch (Exception e) {
+                          ans = "❌ সমস্যা: " + e.getMessage();
+                      }
+                      final String a = ans;
+                      runOnUiThread(() -> {
+                          wait.setText(a);
+                          sendBtn.setEnabled(true);
+                          if (!a.startsWith("❌")) {
+                              history.add(new String[]{"ai", a});
+                              if (speakCb.isChecked()) speak(a);
+                          }
+                          scrollDown();
+                      });
+                  });
+              }
+
+              String ask(int prov, String key, String model, String baseUrl, List<String[]> hist, String img) throws Exception {
+                  List<String[]> h = new ArrayList<>(hist.subList(Math.max(0, hist.size() - 12), hist.size()));
+                  while (!h.isEmpty() && !h.get(0)[0].equals("user")) h.remove(0);
+                  int last = h.size() - 1;
+                  if (prov == 0) {
+                      JSONArray contents = new JSONArray();
+                      for (int i = 0; i < h.size(); i++) {
+                          JSONArray parts = new JSONArray();
+                          parts.put(new JSONObject().put("text", h.get(i)[1]));
+                          if (i == last && img != null) {
+                              parts.put(new JSONObject().put("inline_data",
+                                      new JSONObject().put("mime_type", "image/jpeg").put("data", img)));
+                          }
+                          contents.put(new JSONObject()
+                                  .put("role", h.get(i)[0].equals("user") ? "user" : "model")
+                                  .put("parts", parts));
+                      }
+                      JSONObject body = new JSONObject()
+                              .put("systemInstruction", new JSONObject().put("parts",
+                                      new JSONArray().put(new JSONObject().put("text", SYS))))
+                              .put("contents", contents);
+                      JSONObject r = post("https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent",
+                              body, new String[][]{{"x-goog-api-key", key}});
+                      JSONArray parts = r.getJSONArray("candidates").getJSONObject(0)
+                              .getJSONObject("content").getJSONArray("parts");
+                      StringBuilder sb = new StringBuilder();
+                      for (int i = 0; i < parts.length(); i++) {
+                          JSONObject p = parts.getJSONObject(i);
+                          if (p.has("text") && !p.optBoolean("thought")) sb.append(p.getString("text"));
+                      }
+                      return sb.toString();
+                  } else if (prov == 1) {
+                      JSONArray msgs = new JSONArray();
+                      msgs.put(new JSONObject().put("role", "system").put("content", SYS));
+                      for (int i = 0; i < h.size(); i++) {
+                          String role = h.get(i)[0].equals("user") ? "user" : "assistant";
+                          if (i == last && img != null) {
+                              JSONArray c = new JSONArray()
+                                      .put(new JSONObject().put("type", "text").put("text", h.get(i)[1]))
+                                      .put(new JSONObject().put("type", "image_url").put("image_url",
+                                              new JSONObject().put("url", "data:image/jpeg;base64," + img)));
+                              msgs.put(new JSONObject().put("role", role).put("content", c));
+                          } else {
+                              msgs.put(new JSONObject().put("role", role).put("content", h.get(i)[1]));
+                          }
+                      }
+                      String u = baseUrl.trim();
+                      while (u.endsWith("/")) u = u.substring(0, u.length() - 1);
+                      JSONObject r = post(u + "/chat/completions",
+                              new JSONObject().put("model", model).put("messages", msgs),
+                              new String[][]{{"Authorization", "Bearer " + key}});
+                      return r.getJSONArray("choices").getJSONObject(0).getJSONObject("message").getString("content");
+                  } else {
+                      JSONArray msgs = new JSONArray();
+                      for (int i = 0; i < h.size(); i++) {
+                          String role = h.get(i)[0].equals("user") ? "user" : "assistant";
+                          if (i == last && img != null) {
+                              JSONArray c = new JSONArray()
+                                      .put(new JSONObject().put("type", "image").put("source", new JSONObject()
+                                              .put("type", "base64").put("media_type", "image/jpeg").put("data", img)))
+                                      .put(new JSONObject().put("type", "text").put("text", h.get(i)[1]));
+                              msgs.put(new JSONObject().put("role", role).put("content", c));
+                          } else {
+                              msgs.put(new JSONObject().put("role", role).put("content", h.get(i)[1]));
+                          }
+                      }
+                      JSONObject body = new JSONObject().put("model", model).put("max_tokens", 1500)
+                              .put("system", SYS).put("messages", msgs);
+                      JSONObject r = post("https://api.anthropic.com/v1/messages", body,
+                              new String[][]{{"x-api-key", key}, {"anthropic-version", "2023-06-01"}});
+                      JSONArray c = r.getJSONArray("content");
+                      StringBuilder sb = new StringBuilder();
+                      for (int i = 0; i < c.length(); i++) {
+                          JSONObject p = c.getJSONObject(i);
+                          if ("text".equals(p.optString("type"))) sb.append(p.optString("text"));
+                      }
+                      return sb.toString();
+                  }
+              }
+
+              JSONObject post(String url, JSONObject body, String[][] headers) throws Exception {
+                  HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
+                  c.setRequestMethod("POST");
+                  c.setConnectTimeout(20000);
+                  c.setReadTimeout(90000);
+                  c.setDoOutput(true);
+                  c.setRequestProperty("Content-Type", "application/json");
+                  for (String[] hh : headers) c.setRequestProperty(hh[0], hh[1]);
+                  try (OutputStream o = c.getOutputStream()) {
+                      o.write(body.toString().getBytes(StandardCharsets.UTF_8));
+                  }
+                  int code = c.getResponseCode();
+                  InputStream is = (code >= 200 && code < 300) ? c.getInputStream() : c.getErrorStream();
+                  String s = read(is);
+                  c.disconnect();
+                  if (code < 200 || code >= 300) throw new Exception("HTTP " + code + " — " + shortErr(s));
+                  return new JSONObject(s);
+              }
+
+              String read(InputStream is) throws Exception {
+                  if (is == null) return "";
+                  StringBuilder sb = new StringBuilder();
+                  try (BufferedReader br = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8))) {
+                      String line;
+                      while ((line = br.readLine()) != null) sb.append(line).append('\n');
+                  }
+                  return sb.toString();
+              }
+
+              String shortErr(String s) {
+                  try {
+                      JSONObject j = new JSONObject(s);
+                      Object e = j.opt("error");
+                      if (e instanceof JSONObject) return ((JSONObject) e).optString("message", s);
+                      if (e != null) return e.toString();
+                  } catch (Exception ignored) { }
+                  return s.length() > 200 ? s.substring(0, 200) : s;
+              }
+
+              File currentFile() {
+                  int p = getSharedPreferences("state", MODE_PRIVATE).getInt("page", -1);
+                  if (p < 0) return null;
+                  File f = new File(getFilesDir(), "page_" + p + "_color.png");
+                  return f.exists() ? f : null;
+              }
+
+              String currentImage() {
+                  File f = currentFile();
+                  if (f == null) return null;
+                  BitmapFactory.Options o = new BitmapFactory.Options();
+                  o.inJustDecodeBounds = true;
+                  BitmapFactory.decodeFile(f.getAbsolutePath(), o);
+                  int s = 1;
+                  while (Math.max(o.outWidth, o.outHeight) / s > 1024) s *= 2;
+                  BitmapFactory.Options o2 = new BitmapFactory.Options();
+                  o2.inSampleSize = s;
+                  Bitmap b = BitmapFactory.decodeFile(f.getAbsolutePath(), o2);
+                  if (b == null) return null;
+                  Bitmap out = Bitmap.createBitmap(b.getWidth(), b.getHeight(), Bitmap.Config.ARGB_8888);
+                  Canvas cv = new Canvas(out);
+                  cv.drawColor(Color.WHITE);
+                  cv.drawBitmap(b, 0, 0, null);
+                  ByteArrayOutputStream bo = new ByteArrayOutputStream();
+                  out.compress(Bitmap.CompressFormat.JPEG, 85, bo);
+                  return Base64.encodeToString(bo.toByteArray(), Base64.NO_WRAP);
+              }
+
+              void voice() {
+                  Intent i = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
+                  i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
+                  i.putExtra(RecognizerIntent.EXTRA_LANGUAGE, "bn-BD");
+                  i.putExtra(RecognizerIntent.EXTRA_PROMPT, "বাংলায় প্রশ্ন বলুন...");
+                  try {
+                      startActivityForResult(i, VOICE);
+                  } catch (Exception e) {
+                      toast("ভয়েস ইনপুট পাওয়া যায়নি — Google অ্যাপ চালু আছে কিনা দেখুন");
+                  }
+              }
+
+              @Override
+              protected void onActivityResult(int rq, int rs, Intent data) {
+                  super.onActivityResult(rq, rs, data);
+                  if (rq == VOICE && rs == RESULT_OK && data != null) {
+                      ArrayList<String> r = data.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS);
+                      if (r != null && !r.isEmpty()) send(r.get(0));
+                  }
+              }
+
+              void speak(String a) {
+                  if (!ttsOk) {
+                      toast("বাংলা ভয়েস নেই: Settings → Text-to-speech → Google → বাংলা ডাউনলোড করুন");
+                      return;
+                  }
+                  String s = a;
+                  int max = TextToSpeech.getMaxSpeechInputLength();
+                  if (s.length() > max) s = s.substring(0, max);
+                  tts.speak(s, TextToSpeech.QUEUE_FLUSH, null, "ai");
+              }
+
+              String clean(String a) {
+                  return a.replace("**", "").replace("__", "").replace("`", "")
+                          .replaceAll("(?m)^#+\\s*", "").trim();
+              }
+
+              TextView addBubble(String s, boolean user) {
+                  TextView t = new TextView(this);
+                  t.setText(s);
+                  t.setTextSize(16);
+                  t.setTextColor(Color.WHITE);
+                  t.setTextIsSelectable(true);
+                  t.setMaxWidth(dp(520));
+                  t.setPadding(dp(14), dp(10), dp(14), dp(10));
+                  t.setBackground(ImageTools.round(user ? 0xFF7B5CFF : 0xFF2A2A3A, dp(16)));
+                  LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
+                  lp.topMargin = dp(8);
+                  lp.gravity = user ? Gravity.END : Gravity.START;
+                  chat.addView(t, lp);
+                  scrollDown();
+                  return t;
+              }
+
+              void scrollDown() { chatScroll.post(() -> chatScroll.fullScroll(View.FOCUS_DOWN)); }
+
+              void toast(String s) { Toast.makeText(this, s, Toast.LENGTH_LONG).show(); }
+
+              int dp(float v) { return Math.round(v * d); }
+
+              TextView text(String s, float size, int color) {
+                  TextView t = new TextView(this);
+                  t.setText(s);
+                  t.setTextSize(size);
+                  t.setTextColor(color);
+                  t.setPadding(0, dp(6), 0, dp(2));
+                  return t;
+              }
+
+              EditText edit(String hint) {
+                  EditText e = new EditText(this);
+                  e.setHint(hint);
+                  e.setTextColor(Color.WHITE);
+                  e.setHintTextColor(0xFF8080A0);
+                  e.setTextSize(16);
+                  e.setBackground(ImageTools.round(0xFF2A2A3A, dp(12)));
+                  e.setPadding(dp(12), dp(10), dp(12), dp(10));
+                  return e;
+              }
+
+              Button btn(String s, int color) {
+                  Button b = new Button(this);
+                  b.setText(s);
+                  b.setAllCaps(false);
+                  b.setTextSize(18);
+                  b.setTextColor(Color.WHITE);
+                  b.setBackground(ImageTools.round(color, dp(14)));
+                  b.setMinWidth(dp(52));
+                  b.setMinHeight(dp(48));
+                  b.setStateListAnimator(null);
+                  return b;
+              }
+          }
+          EOF
           cat > app/src/main/java/com/trace/overlay/OverlayService.java <<'EOF'
           package com.trace.overlay;
 
@@ -555,17 +1220,22 @@ jobs:
           import android.app.NotificationChannel;
           import android.app.NotificationManager;
           import android.app.Service;
+          import android.content.Context;
           import android.content.Intent;
           import android.content.pm.ServiceInfo;
           import android.graphics.Bitmap;
           import android.graphics.BitmapFactory;
+          import android.graphics.Canvas;
           import android.graphics.Color;
           import android.graphics.Matrix;
+          import android.graphics.Paint;
+          import android.graphics.Path;
           import android.graphics.PixelFormat;
           import android.graphics.drawable.Drawable;
           import android.graphics.drawable.GradientDrawable;
           import android.os.Build;
           import android.os.IBinder;
+          import android.provider.Settings;
           import android.view.Gravity;
           import android.view.MotionEvent;
           import android.view.View;
@@ -576,18 +1246,41 @@ jobs:
           import android.widget.SeekBar;
           import android.widget.TextView;
           import android.widget.Toast;
+          import java.io.File;
+          import java.util.ArrayList;
+          import java.util.List;
 
           public class OverlayService extends Service {
-              static final int GREEN = 0xFF00C853, RED = 0xFFE53935, GREY = 0xFF3A3A4A;
+              static final int GREEN = 0xFF00C853, RED = 0xFFE53935, GREY = 0xFF3A3A4A, BLUE = 0xFF2979FF;
               WindowManager wm;
               ImageView img;
               FrameLayout frame;
-              WindowManager.LayoutParams imgLp, panelLp, frameLp;
+              StrokeView layer;
+              WindowManager.LayoutParams imgLp, panelLp, frameLp, layerLp;
               LinearLayout panel, tools;
-              TextView lockBtn, handle;
+              TextView lockBtn, handle, pageTv, modeBtn, magnetBtn;
               Matrix m = new Matrix();
-              boolean locked = false, collapsed = false, frameShown = false;
+              boolean locked = false, collapsed = false, frameShown = false, layerShown = false;
+              boolean showLine = false, magnetOn = false, drawing = false;
+              int pageCount = 0, page = 0, maskW, maskH;
+              Bitmap colorBmp, lineBmp;
+              boolean[] mask;
+              final List<float[]> pts = new ArrayList<>();
               float lastX, lastY, prevDist, prevAngle, prevMidX, prevMidY, density;
+
+              static class StrokeView extends View {
+                  final Path path = new Path();
+                  final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+                  StrokeView(Context c, float w) {
+                      super(c);
+                      paint.setColor(BLUE);
+                      paint.setStyle(Paint.Style.STROKE);
+                      paint.setStrokeWidth(w);
+                      paint.setStrokeCap(Paint.Cap.ROUND);
+                      paint.setStrokeJoin(Paint.Join.ROUND);
+                  }
+                  @Override protected void onDraw(Canvas c) { c.drawPath(path, paint); }
+              }
 
               @Override public IBinder onBind(Intent i) { return null; }
 
@@ -595,8 +1288,12 @@ jobs:
               public int onStartCommand(Intent intent, int flags, int startId) {
                   startFg();
                   if (wm == null) buildViews();
-                  String path = intent != null ? intent.getStringExtra("path") : null;
-                  if (path != null) loadImage(path);
+                  if (intent != null && intent.hasExtra("count")) {
+                      pageCount = intent.getIntExtra("count", 0);
+                      showLine = intent.getBooleanExtra("line", false);
+                      page = 0;
+                      loadPage();
+                  }
                   return START_NOT_STICKY;
               }
 
@@ -617,6 +1314,8 @@ jobs:
 
               int dp(float v) { return Math.round(v * density); }
 
+              void toast(String s) { Toast.makeText(this, s, Toast.LENGTH_SHORT).show(); }
+
               void buildViews() {
                   wm = (WindowManager) getSystemService(WINDOW_SERVICE);
                   density = getResources().getDisplayMetrics().density;
@@ -633,6 +1332,7 @@ jobs:
                   wm.addView(img, imgLp);
 
                   buildFrame();
+                  buildLayer();
                   buildPanel();
                   updateLockUi(false);
               }
@@ -645,7 +1345,6 @@ jobs:
                   imgLp.flags = f;
               }
 
-              // Green dashed border + label, shown only in unlocked (arrange) mode
               void buildFrame() {
                   frame = new FrameLayout(this);
                   GradientDrawable border = new GradientDrawable();
@@ -678,6 +1377,20 @@ jobs:
                   frameLp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
               }
 
+              // Transparent layer that catches the pen stroke while magnet mode is on
+              void buildLayer() {
+                  layer = new StrokeView(this, dp(3));
+                  layer.setOnTouchListener((v, e) -> onLayerTouch(e));
+                  layerLp = new WindowManager.LayoutParams(
+                          WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT,
+                          WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+                          WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                                  | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+                                  | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+                          PixelFormat.TRANSLUCENT);
+                  layerLp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+              }
+
               TextView chip(String s, int color) {
                   TextView t = new TextView(this);
                   t.setText(s);
@@ -691,10 +1404,17 @@ jobs:
                   return t;
               }
 
-              void addTool(View v) {
+              void addTool(LinearLayout row, View v) {
                   LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
                   lp.leftMargin = dp(6);
-                  tools.addView(v, lp);
+                  row.addView(v, lp);
+              }
+
+              LinearLayout row() {
+                  LinearLayout r = new LinearLayout(this);
+                  r.setOrientation(LinearLayout.HORIZONTAL);
+                  r.setGravity(Gravity.CENTER_VERTICAL);
+                  return r;
               }
 
               void buildPanel() {
@@ -708,8 +1428,9 @@ jobs:
                   panel.addView(handle);
 
                   tools = new LinearLayout(this);
-                  tools.setOrientation(LinearLayout.HORIZONTAL);
-                  tools.setGravity(Gravity.CENTER_VERTICAL);
+                  tools.setOrientation(LinearLayout.VERTICAL);
+                  LinearLayout row1 = row();
+                  LinearLayout row2 = row();
 
                   lockBtn = chip("", GREEN);
                   lockBtn.setTextSize(16);
@@ -717,7 +1438,7 @@ jobs:
                       locked = !locked;
                       updateLockUi(true);
                   });
-                  addTool(lockBtn);
+                  addTool(row1, lockBtn);
 
                   TextView eye = chip("👁", GREY);
                   eye.setOnClickListener(v -> {
@@ -725,16 +1446,16 @@ jobs:
                       img.setVisibility(vis ? View.INVISIBLE : View.VISIBLE);
                       eye.setText(vis ? "🙈" : "👁");
                   });
-                  addTool(eye);
+                  addTool(row1, eye);
 
                   TextView fit = chip("⟲", GREY);
                   fit.setOnClickListener(v -> fitImage());
-                  addTool(fit);
+                  addTool(row1, fit);
 
                   TextView drop = new TextView(this);
                   drop.setText("💧");
                   drop.setTextSize(18);
-                  addTool(drop);
+                  addTool(row1, drop);
 
                   SeekBar sb = new SeekBar(this);
                   sb.setMax(75);
@@ -747,13 +1468,55 @@ jobs:
                       public void onStartTrackingTouch(SeekBar s) { }
                       public void onStopTrackingTouch(SeekBar s) { }
                   });
-                  tools.addView(sb, new LinearLayout.LayoutParams(dp(170), -2));
+                  row1.addView(sb, new LinearLayout.LayoutParams(dp(170), -2));
 
                   TextView close = chip("✕", GREY);
                   close.setOnClickListener(v -> stopSelf());
-                  addTool(close);
+                  addTool(row1, close);
 
+                  TextView prev = chip("◀", GREY);
+                  prev.setOnClickListener(v -> {
+                      if (page > 0) { page--; loadPage(); }
+                  });
+                  addTool(row2, prev);
+                  pageTv = chip("", 0x00000000);
+                  pageTv.setTextSize(16);
+                  addTool(row2, pageTv);
+                  TextView next = chip("▶", GREY);
+                  next.setOnClickListener(v -> {
+                      if (page < pageCount - 1) { page++; loadPage(); }
+                  });
+                  addTool(row2, next);
+
+                  modeBtn = chip("", GREY);
+                  modeBtn.setTextSize(16);
+                  modeBtn.setOnClickListener(v -> {
+                      if (lineBmp == null) return;
+                      showLine = !showLine;
+                      img.setImageBitmap(showLine ? lineBmp : colorBmp);
+                      updatePanelTexts();
+                  });
+                  addTool(row2, modeBtn);
+
+                  magnetBtn = chip("", GREY);
+                  magnetBtn.setTextSize(16);
+                  magnetBtn.setOnClickListener(v -> toggleMagnet());
+                  addTool(row2, magnetBtn);
+
+                  TextView ai = chip("🤖", GREY);
+                  ai.setOnClickListener(v -> {
+                      Intent i = new Intent(this, AssistantActivity.class);
+                      i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                      startActivity(i);
+                  });
+                  addTool(row2, ai);
+
+                  tools.addView(row1);
+                  LinearLayout.LayoutParams r2 = new LinearLayout.LayoutParams(-2, -2);
+                  r2.topMargin = dp(6);
+                  tools.addView(row2, r2);
                   panel.addView(tools);
+                  updatePanelTexts();
 
                   panelLp = new WindowManager.LayoutParams(
                           WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT,
@@ -792,6 +1555,13 @@ jobs:
                   wm.addView(panel, panelLp);
               }
 
+              void updatePanelTexts() {
+                  pageTv.setText(pageCount > 0 ? (page + 1) + "/" + pageCount : "0/0");
+                  modeBtn.setText(showLine ? "⚫ আউটলাইন" : "🎨 রঙিন");
+                  magnetBtn.setText(magnetOn ? "🧲 ম্যাগনেট: চালু" : "🧲 ম্যাগনেট: বন্ধ");
+                  magnetBtn.setBackground(ImageTools.round(magnetOn ? BLUE : GREY, dp(22)));
+              }
+
               void updateLockUi(boolean showToast) {
                   applyFlags();
                   wm.updateViewLayout(img, imgLp);
@@ -806,10 +1576,194 @@ jobs:
                       wm.addView(frame, frameLp);
                       frameShown = true;
                   }
-                  if (showToast) {
-                      Toast.makeText(this, locked ? "🔒 লক হয়েছে — এখন আঁকুন" : "🔓 আনলক — ছবি সাজান",
-                              Toast.LENGTH_SHORT).show();
+                  if (showToast) toast(locked ? "🔒 লক হয়েছে — এখন আঁকুন" : "🔓 আনলক — ছবি সাজান");
+                  updateMagnetLayer();
+              }
+
+              void toggleMagnet() {
+                  if (!magnetOn && DrawService.instance == null) {
+                      Toast.makeText(this, "Accessibility-তে \"Trace Overlay ম্যাগনেট কলম\" চালু করুন", Toast.LENGTH_LONG).show();
+                      try {
+                          Intent i = new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS);
+                          i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                          startActivity(i);
+                      } catch (Exception ignored) { }
+                      return;
                   }
+                  magnetOn = !magnetOn;
+                  updatePanelTexts();
+                  updateMagnetLayer();
+                  if (magnetOn) toast(locked ? "🧲 চালু — কালো লাইনের কাছ দিয়ে আঁকুন" : "🧲 চালু — আগে 🔒 লক করুন");
+                  else toast("🧲 ম্যাগনেট বন্ধ");
+              }
+
+              void updateMagnetLayer() {
+                  boolean want = magnetOn && locked && !drawing && mask != null;
+                  try {
+                      if (want && !layerShown) {
+                          wm.addView(layer, layerLp);
+                          layerShown = true;
+                          wm.removeView(panel);
+                          wm.addView(panel, panelLp);
+                      } else if (!want && layerShown) {
+                          wm.removeView(layer);
+                          layerShown = false;
+                      }
+                  } catch (Exception ignored) { }
+              }
+
+              boolean onLayerTouch(MotionEvent e) {
+                  if (drawing) return true;
+                  switch (e.getActionMasked()) {
+                      case MotionEvent.ACTION_DOWN:
+                          pts.clear();
+                          layer.path.reset();
+                          layer.path.moveTo(e.getX(), e.getY());
+                          pts.add(new float[]{e.getRawX(), e.getRawY()});
+                          break;
+                      case MotionEvent.ACTION_MOVE:
+                          if (e.getPointerCount() > 1) break;
+                          float offX = e.getRawX() - e.getX(), offY = e.getRawY() - e.getY();
+                          for (int h = 0; h < e.getHistorySize(); h++) {
+                              float x = e.getHistoricalX(h), y = e.getHistoricalY(h);
+                              layer.path.lineTo(x, y);
+                              pts.add(new float[]{x + offX, y + offY});
+                          }
+                          layer.path.lineTo(e.getX(), e.getY());
+                          pts.add(new float[]{e.getRawX(), e.getRawY()});
+                          layer.invalidate();
+                          break;
+                      case MotionEvent.ACTION_UP:
+                          finishStroke();
+                          break;
+                      case MotionEvent.ACTION_CANCEL:
+                          pts.clear();
+                          layer.path.reset();
+                          layer.invalidate();
+                          break;
+                  }
+                  return true;
+              }
+
+              void finishStroke() {
+                  List<Path> strokes = new ArrayList<>();
+                  List<Long> durs = new ArrayList<>();
+                  snap(pts, strokes, durs);
+                  pts.clear();
+                  layer.path.reset();
+                  layer.invalidate();
+                  if (strokes.isEmpty()) {
+                      toast("কালো লাইনের আরও কাছ দিয়ে আঁকুন");
+                      return;
+                  }
+                  final DrawService ds = DrawService.instance;
+                  if (ds == null) {
+                      toast("Accessibility বন্ধ হয়ে গেছে");
+                      magnetOn = false;
+                      updatePanelTexts();
+                      updateMagnetLayer();
+                      return;
+                  }
+                  drawing = true;
+                  updateMagnetLayer();
+                  img.postDelayed(() -> ds.play(strokes, durs, 0, () -> {
+                      drawing = false;
+                      updateMagnetLayer();
+                  }), 80);
+              }
+
+              // Moves every stroke point onto the nearest black outline pixel
+              void snap(List<float[]> in, List<Path> out, List<Long> durs) {
+                  if (mask == null || in.size() < 2) return;
+                  Matrix inv = new Matrix();
+                  if (!m.invert(inv)) return;
+                  int[] loc = new int[2];
+                  img.getLocationOnScreen(loc);
+                  float[] v = new float[9];
+                  m.getValues(v);
+                  float scale = (float) Math.hypot(v[Matrix.MSCALE_X], v[Matrix.MSKEW_Y]);
+                  if (scale <= 0) return;
+                  int rb = Math.max(2, Math.min(80, Math.round(dp(18) / scale)));
+                  List<float[]> cur = new ArrayList<>();
+                  float[] p = new float[2];
+                  for (float[] s : in) {
+                      p[0] = s[0] - loc[0];
+                      p[1] = s[1] - loc[1];
+                      inv.mapPoints(p);
+                      int bx = Math.round(p[0]), by = Math.round(p[1]);
+                      int best = -1, bestD = rb * rb + 1;
+                      for (int dy = -rb; dy <= rb; dy++) {
+                          int y = by + dy;
+                          if (y < 0 || y >= maskH) continue;
+                          int rowStart = y * maskW;
+                          for (int dx = -rb; dx <= rb; dx++) {
+                              int x = bx + dx;
+                              if (x < 0 || x >= maskW) continue;
+                              int dd = dx * dx + dy * dy;
+                              if (dd < bestD && mask[rowStart + x]) { bestD = dd; best = rowStart + x; }
+                          }
+                      }
+                      if (best >= 0) {
+                          float[] q = {best % maskW + 0.5f, best / maskW + 0.5f};
+                          m.mapPoints(q);
+                          q[0] += loc[0];
+                          q[1] += loc[1];
+                          cur.add(q);
+                      } else {
+                          addStroke(cur, out, durs);
+                          cur = new ArrayList<>();
+                      }
+                  }
+                  addStroke(cur, out, durs);
+              }
+
+              void addStroke(List<float[]> s, List<Path> out, List<Long> durs) {
+                  if (s.size() < 2) return;
+                  Path path = new Path();
+                  float len = 0, px = 0, py = 0;
+                  for (int i = 0; i < s.size(); i++) {
+                      int a = Math.max(0, i - 2), b = Math.min(s.size() - 1, i + 2);
+                      float sx = 0, sy = 0;
+                      for (int j = a; j <= b; j++) { sx += s.get(j)[0]; sy += s.get(j)[1]; }
+                      int n = b - a + 1;
+                      float x = Math.max(0, sx / n), y = Math.max(0, sy / n);
+                      if (i == 0) {
+                          path.moveTo(x, y);
+                      } else {
+                          path.lineTo(x, y);
+                          len += (float) Math.hypot(x - px, y - py);
+                      }
+                      px = x;
+                      py = y;
+                  }
+                  if (len < 2) return;
+                  durs.add(Math.max(80L, Math.min(20000L, (long) len)));
+                  out.add(path);
+              }
+
+              void loadPage() {
+                  File dir = getFilesDir();
+                  Bitmap c = BitmapFactory.decodeFile(new File(dir, "page_" + page + "_color.png").getAbsolutePath());
+                  Bitmap l = BitmapFactory.decodeFile(new File(dir, "page_" + page + "_line.png").getAbsolutePath());
+                  if (c == null || l == null) {
+                      toast("ছবি খোলা যায়নি");
+                      return;
+                  }
+                  colorBmp = c;
+                  lineBmp = l;
+                  maskW = l.getWidth();
+                  maskH = l.getHeight();
+                  int[] px = new int[maskW * maskH];
+                  l.getPixels(px, 0, maskW, 0, 0, maskW, maskH);
+                  mask = new boolean[px.length];
+                  for (int i = 0; i < px.length; i++) mask[i] = (px[i] >>> 24) > 100;
+                  img.setImageBitmap(showLine ? lineBmp : colorBmp);
+                  img.setVisibility(View.VISIBLE);
+                  img.post(this::fitImage);
+                  updatePanelTexts();
+                  updateMagnetLayer();
+                  getSharedPreferences("state", MODE_PRIVATE).edit()
+                          .putInt("page", page).putInt("count", pageCount).apply();
               }
 
               boolean onImgTouch(MotionEvent e) {
@@ -851,17 +1805,6 @@ jobs:
                   return true;
               }
 
-              void loadImage(String path) {
-                  Bitmap b = BitmapFactory.decodeFile(path);
-                  if (b == null) {
-                      Toast.makeText(this, "ছবি খোলা যায়নি", Toast.LENGTH_LONG).show();
-                      return;
-                  }
-                  img.setImageBitmap(b);
-                  img.setVisibility(View.VISIBLE);
-                  img.post(this::fitImage);
-              }
-
               void fitImage() {
                   Drawable dr = img.getDrawable();
                   if (dr == null) return;
@@ -881,9 +1824,8 @@ jobs:
                   if (wm != null) {
                       try { wm.removeView(img); } catch (Exception ignored) { }
                       try { wm.removeView(panel); } catch (Exception ignored) { }
-                      if (frameShown) {
-                          try { wm.removeView(frame); } catch (Exception ignored) { }
-                      }
+                      if (frameShown) try { wm.removeView(frame); } catch (Exception ignored) { }
+                      if (layerShown) try { wm.removeView(layer); } catch (Exception ignored) { }
                   }
                   super.onDestroy();
               }
