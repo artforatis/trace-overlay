@@ -42,8 +42,8 @@ jobs:
                   applicationId "com.trace.overlay"
                   minSdk 30
                   targetSdk 34
-                  versionCode 3
-                  versionName "3.0"
+                  versionCode 4
+                  versionName "4.0"
               }
               compileOptions {
                   sourceCompatibility JavaVersion.VERSION_17
@@ -59,6 +59,7 @@ jobs:
               <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
               <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
               <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/>
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION"/>
               <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
               <uses-permission android:name="android.permission.INTERNET"/>
               <queries>
@@ -87,10 +88,17 @@ jobs:
                       android:taskAffinity="com.trace.overlay.ai"
                       android:launchMode="singleTask"
                       android:windowSoftInputMode="adjustResize"/>
+                  <activity
+                      android:name=".CaptureActivity"
+                      android:exported="false"
+                      android:theme="@android:style/Theme.Translucent.NoTitleBar"
+                      android:taskAffinity="com.trace.overlay.cap"
+                      android:excludeFromRecents="true"
+                      android:launchMode="singleTask"/>
                   <service
                       android:name=".OverlayService"
                       android:exported="false"
-                      android:foregroundServiceType="specialUse">
+                      android:foregroundServiceType="specialUse|mediaProjection">
                       <property
                           android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                           android:value="Floating tracing reference image"/>
@@ -124,24 +132,31 @@ jobs:
           EOF
           cat > app/src/main/res/drawable/ic_bg.xml <<'EOF'
           <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
-              <gradient android:angle="135" android:startColor="#7B5CFF" android:endColor="#FF4D9D"/>
+              <gradient android:type="linear" android:angle="135"
+                  android:startColor="#3A1C71" android:centerColor="#D76D77" android:endColor="#FFAF7B"/>
           </shape>
           EOF
           cat > app/src/main/res/drawable/ic_fg.xml <<'EOF'
           <vector xmlns:android="http://schemas.android.com/apk/res/android"
               android:width="108dp" android:height="108dp"
               android:viewportWidth="108" android:viewportHeight="108">
-              <path android:strokeColor="#99FFFFFF" android:strokeWidth="3.5" android:fillColor="#00000000"
-                  android:pathData="M36,30 H62 A4,4 0 0 1 66,34 V60 A4,4 0 0 1 62,64 H36 A4,4 0 0 1 32,60 V34 A4,4 0 0 1 36,30 Z"/>
-              <path android:strokeColor="#FFFFFFFF" android:strokeWidth="3.5" android:fillColor="#33FFFFFF"
-                  android:pathData="M46,40 H72 A4,4 0 0 1 76,44 V70 A4,4 0 0 1 72,74 H46 A4,4 0 0 1 42,70 V44 A4,4 0 0 1 46,40 Z"/>
-              <path android:fillColor="#FFFFFFFF" android:pathData="M50,70 L57,60 L62,65 L67,58 L73,70 Z"/>
-              <path android:fillColor="#FFC107" android:strokeColor="#40000000" android:strokeWidth="1"
-                  android:pathData="M42.83,69.51 L61.21,51.13 L66.87,56.79 L48.49,75.17 Z"/>
-              <path android:fillColor="#FF8A80" android:strokeColor="#40000000" android:strokeWidth="1"
-                  android:pathData="M61.21,51.13 L65.45,46.89 L71.11,52.55 L66.87,56.79 Z"/>
-              <path android:fillColor="#FFE0B2" android:pathData="M40,78 L42.83,69.51 L48.49,75.17 Z"/>
-              <path android:fillColor="#333333" android:pathData="M40,78 L41.4,73.8 L44.2,76.6 Z"/>
+              <path android:fillColor="#5CE1FF" android:pathData="M41,81 m-2.6,0 a2.6,2.6 0 1,0 5.2,0 a2.6,2.6 0 1,0 -5.2,0"/>
+              <path android:fillColor="#5CE1FF" android:pathData="M47,83.5 m-2.4,0 a2.4,2.4 0 1,0 4.8,0 a2.4,2.4 0 1,0 -4.8,0"/>
+              <path android:fillColor="#7FE9FF" android:pathData="M53,84.5 m-2.2,0 a2.2,2.2 0 1,0 4.4,0 a2.2,2.2 0 1,0 -4.4,0"/>
+              <path android:fillColor="#9FEFFF" android:pathData="M59,84 m-2,0 a2,2 0 1,0 4,0 a2,2 0 1,0 -4,0"/>
+              <path android:fillColor="#BFF5FF" android:pathData="M65,82 m-1.8,0 a1.8,1.8 0 1,0 3.6,0 a1.8,1.8 0 1,0 -3.6,0"/>
+              <path android:fillColor="#DFFAFF" android:pathData="M70.5,79 m-1.6,0 a1.6,1.6 0 1,0 3.2,0 a1.6,1.6 0 1,0 -3.2,0"/>
+              <group android:rotation="35" android:pivotX="54" android:pivotY="54">
+                  <path android:fillColor="#FFFFFF"
+                      android:pathData="M54,26 C63,35 70,46 70,56 L60,74 L54,82 L48,74 L38,56 C38,46 45,35 54,26 Z"/>
+                  <path android:fillColor="#4A2C8F" android:pathData="M53.2,54 L54.8,54 L54.4,81 L53.6,81 Z"/>
+                  <path android:fillColor="#4A2C8F" android:pathData="M54,50 m-3.4,0 a3.4,3.4 0 1,0 6.8,0 a3.4,3.4 0 1,0 -6.8,0"/>
+                  <path android:fillColor="#00000000" android:strokeColor="#C9B8FF" android:strokeWidth="1.6"
+                      android:pathData="M43,40 L65,40"/>
+              </group>
+              <path android:fillColor="#FFE66D"
+                  android:pathData="M34,31 L35.8,36.2 L41,38 L35.8,39.8 L34,45 L32.2,39.8 L27,38 L32.2,36.2 Z"/>
+              <path android:fillColor="#FFF4B8" android:pathData="M44,30 m-1.5,0 a1.5,1.5 0 1,0 3,0 a1.5,1.5 0 1,0 -3,0"/>
           </vector>
           EOF
           cat > app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml <<'EOF'
@@ -182,6 +197,58 @@ jobs:
                       }
                   }
                   return Bitmap.createBitmap(px, w, h, Bitmap.Config.ARGB_8888);
+              }
+
+              // Thins thick outlines down to a 1-pixel centre line (Zhang-Suen)
+              static boolean[] skeleton(boolean[] src, int w, int h) {
+                  byte[] a = new byte[w * h];
+                  for (int y = 1; y < h - 1; y++) {
+                      for (int x = 1; x < w - 1; x++) {
+                          int i = y * w + x;
+                          a[i] = (byte) (src[i] ? 1 : 0);
+                      }
+                  }
+                  int[] del = new int[w * h];
+                  boolean changed = true;
+                  int iter = 0;
+                  while (changed && iter++ < 150) {
+                      changed = false;
+                      for (int step = 0; step < 2; step++) {
+                          int n = 0;
+                          for (int y = 1; y < h - 1; y++) {
+                              int row = y * w;
+                              for (int x = 1; x < w - 1; x++) {
+                                  int i = row + x;
+                                  if (a[i] == 0) continue;
+                                  int p2 = a[i - w], p3 = a[i - w + 1], p4 = a[i + 1], p5 = a[i + w + 1];
+                                  int p6 = a[i + w], p7 = a[i + w - 1], p8 = a[i - 1], p9 = a[i - w - 1];
+                                  int bs = p2 + p3 + p4 + p5 + p6 + p7 + p8 + p9;
+                                  if (bs < 2 || bs > 6) continue;
+                                  int t = 0;
+                                  if (p2 == 0 && p3 == 1) t++;
+                                  if (p3 == 0 && p4 == 1) t++;
+                                  if (p4 == 0 && p5 == 1) t++;
+                                  if (p5 == 0 && p6 == 1) t++;
+                                  if (p6 == 0 && p7 == 1) t++;
+                                  if (p7 == 0 && p8 == 1) t++;
+                                  if (p8 == 0 && p9 == 1) t++;
+                                  if (p9 == 0 && p2 == 1) t++;
+                                  if (t != 1) continue;
+                                  if (step == 0) {
+                                      if (p2 * p4 * p6 != 0 || p4 * p6 * p8 != 0) continue;
+                                  } else {
+                                      if (p2 * p4 * p8 != 0 || p2 * p6 * p8 != 0) continue;
+                                  }
+                                  del[n++] = i;
+                              }
+                          }
+                          for (int k = 0; k < n; k++) a[del[k]] = 0;
+                          if (n > 0) changed = true;
+                      }
+                  }
+                  boolean[] out = new boolean[w * h];
+                  for (int i = 0; i < out.length; i++) out[i] = a[i] != 0;
+                  return out;
               }
 
               static Bitmap removeBackground(Bitmap src) {
@@ -245,6 +312,234 @@ jobs:
                       q[tail++] = j;
                   }
                   return tail;
+              }
+          }
+          EOF
+          cat > app/src/main/java/com/trace/overlay/Palette.java <<'EOF'
+          package com.trace.overlay;
+
+          import android.content.ClipData;
+          import android.content.ClipboardManager;
+          import android.content.Context;
+          import java.util.ArrayList;
+          import java.util.List;
+          import java.util.Locale;
+
+          final class Palette {
+              static final String[] THEME_NAMES = {
+                  "🌸 পেস্টেল", "🌅 সূর্যাস্ত", "🌊 সমুদ্র", "🌳 বন",
+                  "💜 নিয়ন", "🙂 স্কিন টোন", "📺 রেট্রো", "🖤 মনোক্রোম"
+              };
+              static final int[][] THEMES = {
+                  {0xFFFFB3BA, 0xFFFFDFBA, 0xFFFFFFBA, 0xFFBAFFC9, 0xFFBAE1FF, 0xFFE0BBE4},
+                  {0xFFFF6B6B, 0xFFFF8E53, 0xFFFFC857, 0xFFF9A1BC, 0xFF6A4C93, 0xFF2E294E},
+                  {0xFF03045E, 0xFF0077B6, 0xFF00B4D8, 0xFF90E0EF, 0xFFCAF0F8, 0xFFF1FAEE},
+                  {0xFF2D6A4F, 0xFF40916C, 0xFF74C69D, 0xFFB7E4C7, 0xFF8B5E34, 0xFFDDA15E},
+                  {0xFFFF00E5, 0xFF7B2FFF, 0xFF00F0FF, 0xFF39FF14, 0xFFFFE600, 0xFFFF3131},
+                  {0xFFFFE0CC, 0xFFF5C6A5, 0xFFE0A67E, 0xFFC68642, 0xFF8D5524, 0xFF5C3317},
+                  {0xFFE63946, 0xFFF1FAEE, 0xFFA8DADC, 0xFF457B9D, 0xFF1D3557, 0xFFF4A261},
+                  {0xFF000000, 0xFF3A3A3A, 0xFF7A7A7A, 0xFFB5B5B5, 0xFFE0E0E0, 0xFFFFFFFF}
+              };
+
+              static List<Integer> load(Context c) {
+                  String s = c.getSharedPreferences("palette", Context.MODE_PRIVATE).getString("colors", "");
+                  List<Integer> l = new ArrayList<>();
+                  if (s.isEmpty()) return l;
+                  for (String t : s.split(",")) {
+                      try { l.add((int) Long.parseLong(t, 16)); } catch (Exception ignored) { }
+                  }
+                  return l;
+              }
+
+              static void save(Context c, List<Integer> l) {
+                  StringBuilder sb = new StringBuilder();
+                  for (int x : l) {
+                      if (sb.length() > 0) sb.append(',');
+                      sb.append(Integer.toHexString(x));
+                  }
+                  c.getSharedPreferences("palette", Context.MODE_PRIVATE).edit().putString("colors", sb.toString()).apply();
+              }
+
+              static void add(Context c, int col) {
+                  col |= 0xFF000000;
+                  List<Integer> l = load(c);
+                  l.remove(Integer.valueOf(col));
+                  l.add(0, col);
+                  while (l.size() > 40) l.remove(l.size() - 1);
+                  save(c, l);
+              }
+
+              static void remove(Context c, int col) {
+                  List<Integer> l = load(c);
+                  l.remove(Integer.valueOf(col));
+                  save(c, l);
+              }
+
+              static String hex(int col) {
+                  return String.format(Locale.US, "#%06X", col & 0xFFFFFF);
+              }
+
+              static void copy(Context c, int col) {
+                  ClipboardManager cm = c.getSystemService(ClipboardManager.class);
+                  if (cm != null) cm.setPrimaryClip(ClipData.newPlainText("color", hex(col).substring(1)));
+              }
+          }
+          EOF
+          cat > app/src/main/java/com/trace/overlay/Templates.java <<'EOF'
+          package com.trace.overlay;
+
+          import android.graphics.Bitmap;
+          import android.graphics.Canvas;
+          import android.graphics.Color;
+          import android.graphics.Paint;
+          import android.graphics.Path;
+
+          final class Templates {
+              static final String[] NAMES = {
+                  "🙂 মুখের অনুপাত", "🧸 চিবি চরিত্র", "🧍 শরীরের অনুপাত", "🏙 পারস্পেক্টিভ বক্স",
+                  "⭐ তারা", "❤ হার্ট", "🌸 ফুল", "🔲 গ্রিড"
+              };
+
+              static Bitmap make(int i) {
+                  Bitmap b = Bitmap.createBitmap(1600, 1600, Bitmap.Config.ARGB_8888);
+                  Canvas c = new Canvas(b);
+                  Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+                  p.setStyle(Paint.Style.STROKE);
+                  p.setColor(Color.BLACK);
+                  p.setStrokeWidth(12);
+                  p.setStrokeCap(Paint.Cap.ROUND);
+                  p.setStrokeJoin(Paint.Join.ROUND);
+                  Paint g = new Paint(p);
+                  g.setStrokeWidth(6);
+                  switch (i) {
+                      case 0:
+                          c.drawOval(350, 200, 1250, 1350, p);
+                          c.drawLine(800, 200, 800, 1350, g);
+                          c.drawLine(350, 760, 1250, 760, g);
+                          c.drawLine(560, 980, 1040, 980, g);
+                          c.drawLine(620, 1140, 980, 1140, g);
+                          c.drawOval(470, 710, 690, 810, p);
+                          c.drawOval(910, 710, 1130, 810, p);
+                          break;
+                      case 1:
+                          c.drawCircle(800, 600, 380, p);
+                          c.drawLine(420, 640, 1180, 640, g);
+                          c.drawLine(800, 220, 800, 980, g);
+                          c.drawRoundRect(620, 960, 980, 1360, 80, 80, p);
+                          c.drawLine(620, 1040, 500, 1250, p);
+                          c.drawLine(980, 1040, 1100, 1250, p);
+                          c.drawLine(710, 1360, 700, 1520, p);
+                          c.drawLine(890, 1360, 900, 1520, p);
+                          break;
+                      case 2:
+                          for (int k = 0; k <= 8; k++) c.drawLine(450, 60 + 190 * k, 1150, 60 + 190 * k, g);
+                          c.drawOval(720, 60, 880, 250, p);
+                          c.drawLine(800, 250, 800, 900, p);
+                          c.drawLine(560, 330, 1040, 330, p);
+                          c.drawLine(650, 900, 950, 900, p);
+                          c.drawLine(560, 330, 650, 900, p);
+                          c.drawLine(1040, 330, 950, 900, p);
+                          c.drawLine(560, 330, 500, 1000, p);
+                          c.drawLine(1040, 330, 1100, 1000, p);
+                          c.drawLine(650, 900, 700, 1540, p);
+                          c.drawLine(950, 900, 900, 1540, p);
+                          break;
+                      case 3:
+                          c.drawLine(0, 700, 1600, 700, g);
+                          c.drawCircle(800, 700, 14, p);
+                          c.drawLine(800, 700, 0, 0, g);
+                          c.drawLine(800, 700, 1600, 0, g);
+                          c.drawLine(800, 700, 0, 1600, g);
+                          c.drawLine(800, 700, 1600, 1600, g);
+                          c.drawRect(500, 900, 1100, 1400, p);
+                          c.drawRect(635, 810, 965, 1085, p);
+                          c.drawLine(500, 900, 635, 810, p);
+                          c.drawLine(1100, 900, 965, 810, p);
+                          c.drawLine(500, 1400, 635, 1085, p);
+                          c.drawLine(1100, 1400, 965, 1085, p);
+                          break;
+                      case 4: {
+                          Path s = new Path();
+                          for (int k = 0; k < 10; k++) {
+                              double a = -Math.PI / 2 + k * Math.PI / 5;
+                              float r = (k % 2 == 0) ? 650 : 260;
+                              float x = (float) (800 + r * Math.cos(a)), y = (float) (840 + r * Math.sin(a));
+                              if (k == 0) s.moveTo(x, y); else s.lineTo(x, y);
+                          }
+                          s.close();
+                          c.drawPath(s, p);
+                          break;
+                      }
+                      case 5: {
+                          Path h = new Path();
+                          h.moveTo(800, 1400);
+                          h.cubicTo(200, 950, 250, 300, 800, 580);
+                          h.cubicTo(1350, 300, 1400, 950, 800, 1400);
+                          c.drawPath(h, p);
+                          break;
+                      }
+                      case 6:
+                          for (int k = 0; k < 6; k++) {
+                              c.save();
+                              c.rotate(60 * k, 800, 800);
+                              c.drawOval(720, 380, 880, 690, p);
+                              c.restore();
+                          }
+                          c.drawCircle(800, 800, 120, p);
+                          c.drawLine(800, 920, 800, 1560, p);
+                          c.save();
+                          c.rotate(-35, 800, 1250);
+                          c.drawOval(800, 1180, 1050, 1320, p);
+                          c.restore();
+                          break;
+                      default:
+                          c.drawRect(100, 100, 1500, 1500, p);
+                          for (int k = 1; k < 8; k++) {
+                              float v = 100 + 175 * k;
+                              c.drawLine(v, 100, v, 1500, g);
+                              c.drawLine(100, v, 1500, v, g);
+                          }
+                          break;
+                  }
+                  return b;
+              }
+          }
+          EOF
+          cat > app/src/main/java/com/trace/overlay/CaptureActivity.java <<'EOF'
+          package com.trace.overlay;
+
+          import android.app.Activity;
+          import android.content.Intent;
+          import android.media.projection.MediaProjectionManager;
+          import android.os.Bundle;
+
+          // Asks once for permission to take a single screenshot for the colour picker
+          public class CaptureActivity extends Activity {
+              @Override
+              protected void onCreate(Bundle b) {
+                  super.onCreate(b);
+                  try {
+                      MediaProjectionManager mpm = getSystemService(MediaProjectionManager.class);
+                      startActivityForResult(mpm.createScreenCaptureIntent(), 7);
+                  } catch (Exception e) {
+                      send(RESULT_CANCELED, null);
+                  }
+              }
+
+              @Override
+              protected void onActivityResult(int rq, int rs, Intent data) {
+                  super.onActivityResult(rq, rs, data);
+                  send(rs, data);
+              }
+
+              void send(int rs, Intent data) {
+                  Intent s = new Intent(this, OverlayService.class);
+                  s.setAction("CAPTURE");
+                  s.putExtra("code", rs);
+                  if (data != null) s.putExtra("data", data);
+                  try { startService(s); } catch (Exception ignored) { }
+                  finish();
+                  overridePendingTransition(0, 0);
               }
           }
           EOF
@@ -319,6 +614,7 @@ jobs:
           import android.view.View;
           import android.widget.Button;
           import android.widget.FrameLayout;
+          import android.widget.HorizontalScrollView;
           import android.widget.ImageView;
           import android.widget.LinearLayout;
           import android.widget.ScrollView;
@@ -344,7 +640,7 @@ jobs:
               float d;
               ImageView preview;
               TextView statusTv, emptyTv, pageLbl;
-              LinearLayout navRow;
+              LinearLayout navRow, savedRow;
               Switch swBg, swLine;
               Button permBtn, startBtn, accBtn;
               Bitmap original, processed;
@@ -370,14 +666,28 @@ jobs:
                   sv.addView(root);
 
                   LinearLayout header = new LinearLayout(this);
-                  header.setOrientation(LinearLayout.VERTICAL);
+                  header.setOrientation(LinearLayout.HORIZONTAL);
+                  header.setGravity(Gravity.CENTER_VERTICAL);
                   GradientDrawable hg = new GradientDrawable(GradientDrawable.Orientation.TL_BR,
-                          new int[]{0xFF7B5CFF, 0xFFFF4D9D});
+                          new int[]{0xFF3A1C71, 0xFFD76D77, 0xFFFFAF7B});
                   hg.setCornerRadius(dp(22));
                   header.setBackground(hg);
-                  header.setPadding(dp(24), dp(28), dp(24), dp(28));
-                  header.addView(text("✏  Trace Overlay", 30, Color.WHITE, true));
-                  header.addView(text("যেকোনো আর্ট অ্যাপের উপরে ছবি রেখে সহজে ট্রেস করুন", 15, 0xE6FFFFFF, false));
+                  header.setPadding(dp(20), dp(24), dp(20), dp(24));
+                  ImageView logo = new ImageView(this);
+                  logo.setImageResource(R.mipmap.ic_launcher);
+                  GradientDrawable ov = new GradientDrawable();
+                  ov.setShape(GradientDrawable.OVAL);
+                  ov.setColor(0x33FFFFFF);
+                  logo.setBackground(ov);
+                  logo.setClipToOutline(true);
+                  header.addView(logo, new LinearLayout.LayoutParams(dp(76), dp(76)));
+                  LinearLayout ht = new LinearLayout(this);
+                  ht.setOrientation(LinearLayout.VERTICAL);
+                  ht.setPadding(dp(16), 0, 0, 0);
+                  ht.addView(text("Trace Overlay", 30, Color.WHITE, true));
+                  ht.addView(text("ট্রেস · ম্যাগনেট কলম · রঙের প্যালেট · AI", 15, 0xE6FFFFFF, false));
+                  ht.addView(text("ভার্সন 4.0", 12, 0xB3FFFFFF, false));
+                  header.addView(ht, new LinearLayout.LayoutParams(0, -2, 1f));
                   root.addView(header);
 
                   permBtn = button("", 0xFFFF9800);
@@ -437,6 +747,28 @@ jobs:
                   statusTv = text("", 15, 0xFFB0B0C8, false);
                   root.addView(card("ধাপ ২ · ছবি", pickBtn, box, navRow, swBg, swLine, statusTv));
 
+                  LinearLayout tplBox = new LinearLayout(this);
+                  tplBox.setOrientation(LinearLayout.VERTICAL);
+                  for (int i = 0; i < Templates.NAMES.length; i += 2) {
+                      LinearLayout r = new LinearLayout(this);
+                      r.setOrientation(LinearLayout.HORIZONTAL);
+                      for (int j = i; j < Math.min(i + 2, Templates.NAMES.length); j++) {
+                          final int k = j;
+                          Button tb = button(Templates.NAMES[j], 0xFF2E2E44);
+                          tb.setTextSize(15);
+                          tb.setOnClickListener(v -> addTemplate(k));
+                          LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -2, 1f);
+                          lp.leftMargin = dp(4);
+                          lp.rightMargin = dp(4);
+                          r.addView(tb, lp);
+                      }
+                      LinearLayout.LayoutParams rl = new LinearLayout.LayoutParams(-1, -2);
+                      rl.topMargin = dp(8);
+                      tplBox.addView(r, rl);
+                  }
+                  root.addView(card("📐 তৈরি টেমপ্লেট · ট্যাপ করলে পাতা হিসেবে যোগ হবে",
+                          text("অনুশীলনের জন্য ট্রেস করুন। ম্যাগনেট কলমেও কাজ করে।", 14, 0xFFB0B0C8, false), tplBox));
+
                   startBtn = button("▶  ট্রেসিং শুরু করুন", 0xFF00C853);
                   startBtn.setOnClickListener(v -> startOverlay());
                   Button stopBtn = button("■  বন্ধ করুন", 0xFF3A3A4A);
@@ -446,13 +778,37 @@ jobs:
                   });
                   root.addView(card("ধাপ ৩ · শুরু", startBtn, stopBtn));
 
+                  HorizontalScrollView hs = new HorizontalScrollView(this);
+                  savedRow = new LinearLayout(this);
+                  savedRow.setOrientation(LinearLayout.HORIZONTAL);
+                  hs.addView(savedRow);
+                  Button clearBtn = button("🗑  সেভ করা সব রং মুছুন", 0xFF3A3A4A);
+                  clearBtn.setTextSize(15);
+                  clearBtn.setOnClickListener(v -> {
+                      Palette.save(this, new ArrayList<>());
+                      refreshSaved();
+                      toast("সব রং মুছে ফেলা হয়েছে");
+                  });
+                  LinearLayout themesBox = new LinearLayout(this);
+                  themesBox.setOrientation(LinearLayout.VERTICAL);
+                  for (int i = 0; i < Palette.THEMES.length; i++) {
+                      LinearLayout.LayoutParams tl = new LinearLayout.LayoutParams(-1, -2);
+                      tl.topMargin = dp(8);
+                      themesBox.addView(themeRow(i), tl);
+                  }
+                  root.addView(card("🎨 রঙের থিম ও সেভ করা রং",
+                          text("আপনার সেভ করা রং (ট্যাপ = HEX কপি):", 14, 0xFFB0B0C8, false),
+                          hs, clearBtn,
+                          text("রেডি থিম · ট্যাপ করলে সেভ করা রঙে যোগ হবে:", 14, 0xFFB0B0C8, false),
+                          themesBox));
+
                   accBtn = button("", 0xFFFF9800);
                   accBtn.setOnClickListener(v -> {
                       try { startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)); } catch (Exception ignored) { }
                       toast("\"Trace Overlay ম্যাগনেট কলম\" খুঁজে চালু করুন");
                   });
                   root.addView(card("🧲 ম্যাগনেট কলম",
-                          text("চালু থাকলে কালো লাইনের কাছ দিয়ে আঁকলে আঁকাটা নিজে থেকে লাইনের উপর বসে যায়।", 14, 0xFFB0B0C8, false),
+                          text("🔒 লক + 🧲 চালু থাকলে কালো লাইনের কাছ দিয়ে আঁকুন। কলম তুললে আঁকাটা লাইনের মাঝ বরাবর হুবহু বসে যাবে।", 14, 0xFFB0B0C8, false),
                           accBtn));
 
                   Button aiBtn = button("🤖  AI সহকারী খুলুন", ACCENT);
@@ -463,24 +819,98 @@ jobs:
                           "• 🔓 সবুজ = ছবি সাজানোর মোড\n"
                           + "• 🔒 লাল = আঁকার মোড\n"
                           + "• 🎨 / ⚫ বাটনে রঙিন আর আউটলাইন বদলান\n"
-                          + "• ◀ ▶ দিয়ে পাতা বদলান\n"
+                          + "• ডানপাশের 🎨 বাটনে রঙের প্যালেট — 💉 ছবি থেকে, 📷 স্ক্রিন থেকে রং নিন\n"
+                          + "• রঙে ট্যাপ করলে HEX কপি হবে — আর্ট অ্যাপের রঙের HEX ঘরে পেস্ট করুন\n"
                           + "• ভিডিওর জন্য আর্ট অ্যাপের টাইমল্যাপস ব্যবহার করুন",
                           14, 0xFFB0B0C8, false)));
 
                   setContentView(sv);
                   updateUi();
+                  refreshSaved();
               }
 
               @Override
               protected void onResume() {
                   super.onResume();
                   updateUi();
+                  refreshSaved();
               }
 
               @Override
               protected void onDestroy() {
                   exec.shutdown();
                   super.onDestroy();
+              }
+
+              LinearLayout themeRow(int i) {
+                  LinearLayout r = new LinearLayout(this);
+                  r.setOrientation(LinearLayout.HORIZONTAL);
+                  r.setGravity(Gravity.CENTER_VERTICAL);
+                  r.setBackground(ImageTools.round(0xFF262634, dp(14)));
+                  r.setPadding(dp(12), dp(10), dp(12), dp(10));
+                  r.addView(text(Palette.THEME_NAMES[i], 16, Color.WHITE, true), new LinearLayout.LayoutParams(0, -2, 1f));
+                  for (int col : Palette.THEMES[i]) {
+                      View dot = new View(this);
+                      GradientDrawable gd = new GradientDrawable();
+                      gd.setShape(GradientDrawable.OVAL);
+                      gd.setColor(col);
+                      gd.setStroke(dp(1), 0x66FFFFFF);
+                      dot.setBackground(gd);
+                      LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(24), dp(24));
+                      lp.leftMargin = dp(6);
+                      r.addView(dot, lp);
+                  }
+                  r.setOnClickListener(v -> {
+                      int[] cols = Palette.THEMES[i];
+                      for (int k = cols.length - 1; k >= 0; k--) Palette.add(this, cols[k]);
+                      refreshSaved();
+                      toast("✅ " + Palette.THEME_NAMES[i] + " যোগ হয়েছে");
+                  });
+                  return r;
+              }
+
+              void refreshSaved() {
+                  if (savedRow == null) return;
+                  savedRow.removeAllViews();
+                  List<Integer> cols = Palette.load(this);
+                  if (cols.isEmpty()) {
+                      savedRow.addView(text("এখনো কোনো রং সেভ করা হয়নি", 14, 0xFF9090A8, false));
+                      return;
+                  }
+                  for (int col : cols) {
+                      View dot = new View(this);
+                      GradientDrawable gd = new GradientDrawable();
+                      gd.setShape(GradientDrawable.OVAL);
+                      gd.setColor(col);
+                      gd.setStroke(dp(2), Color.WHITE);
+                      dot.setBackground(gd);
+                      dot.setOnClickListener(v -> {
+                          Palette.copy(this, col);
+                          toast("🎨 " + Palette.hex(col) + " কপি হয়েছে");
+                      });
+                      LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(40), dp(40));
+                      lp.rightMargin = dp(8);
+                      savedRow.addView(dot, lp);
+                  }
+              }
+
+              void addTemplate(int i) {
+                  exec.execute(() -> {
+                      try {
+                          Bitmap b = Templates.make(i);
+                          File f = new File(getCacheDir(), "tpl_" + i + ".png");
+                          save(b, f);
+                          Uri u = Uri.fromFile(f);
+                          runOnUiThread(() -> {
+                              pages.add(u);
+                              cur = pages.size() - 1;
+                              loadPreview();
+                              toast("✅ টেমপ্লেট পাতা হিসেবে যোগ হয়েছে");
+                          });
+                      } catch (Exception e) {
+                          runOnUiThread(() -> toast("টেমপ্লেট তৈরি করা যায়নি"));
+                      }
+                  });
               }
 
               void updateUi() {
@@ -1216,6 +1646,7 @@ jobs:
           cat > app/src/main/java/com/trace/overlay/OverlayService.java <<'EOF'
           package com.trace.overlay;
 
+          import android.app.Activity;
           import android.app.Notification;
           import android.app.NotificationChannel;
           import android.app.NotificationManager;
@@ -1231,10 +1662,19 @@ jobs:
           import android.graphics.Paint;
           import android.graphics.Path;
           import android.graphics.PixelFormat;
+          import android.graphics.Rect;
           import android.graphics.drawable.Drawable;
           import android.graphics.drawable.GradientDrawable;
+          import android.hardware.display.DisplayManager;
+          import android.hardware.display.VirtualDisplay;
+          import android.media.Image;
+          import android.media.ImageReader;
+          import android.media.projection.MediaProjection;
+          import android.media.projection.MediaProjectionManager;
           import android.os.Build;
+          import android.os.Handler;
           import android.os.IBinder;
+          import android.os.Looper;
           import android.provider.Settings;
           import android.view.Gravity;
           import android.view.MotionEvent;
@@ -1243,49 +1683,77 @@ jobs:
           import android.widget.FrameLayout;
           import android.widget.ImageView;
           import android.widget.LinearLayout;
+          import android.widget.ScrollView;
           import android.widget.SeekBar;
           import android.widget.TextView;
           import android.widget.Toast;
           import java.io.File;
+          import java.nio.ByteBuffer;
           import java.util.ArrayList;
+          import java.util.Arrays;
+          import java.util.Collections;
           import java.util.List;
 
           public class OverlayService extends Service {
-              static final int GREEN = 0xFF00C853, RED = 0xFFE53935, GREY = 0xFF3A3A4A, BLUE = 0xFF2979FF;
+              static final int GREEN = 0xFF00C853, RED = 0xFFE53935, GREY = 0xFF3A3A4A, BLUE = 0xFF2979FF, PURPLE = 0xFF7B5CFF;
               WindowManager wm;
               ImageView img;
-              FrameLayout frame;
+              FrameLayout frame, picker;
               StrokeView layer;
-              WindowManager.LayoutParams imgLp, panelLp, frameLp, layerLp;
-              LinearLayout panel, tools;
-              TextView lockBtn, handle, pageTv, modeBtn, magnetBtn;
+              WindowManager.LayoutParams imgLp, panelLp, frameLp, layerLp, palLp;
+              LinearLayout panel, tools, palRoot, palBody, swatchBox;
+              TextView lockBtn, handle, pageTv, modeBtn, magnetBtn, eyeBtn;
               Matrix m = new Matrix();
               boolean locked = false, collapsed = false, frameShown = false, layerShown = false;
-              boolean showLine = false, magnetOn = false, drawing = false;
-              int pageCount = 0, page = 0, maskW, maskH;
+              boolean showLine = false, magnetOn = false, drawing = false, imgHidden = false, palOpen = false;
+              int pageCount = 0, page = 0, maskW, maskH, skelToken = 0;
               Bitmap colorBmp, lineBmp;
-              boolean[] mask;
+              boolean[] mask, skel;
               final List<float[]> pts = new ArrayList<>();
               float lastX, lastY, prevDist, prevAngle, prevMidX, prevMidY, density;
 
               static class StrokeView extends View {
                   final Path path = new Path();
                   final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
-                  StrokeView(Context c, float w) {
+                  final Paint bg = new Paint(Paint.ANTI_ALIAS_FLAG);
+                  final Paint tp = new Paint(Paint.ANTI_ALIAS_FLAG);
+                  String banner = "🧲 ম্যাগনেট চালু — কালো লাইনের উপর দিয়ে আঁকুন";
+
+                  StrokeView(Context c, float w, float textPx) {
                       super(c);
                       paint.setColor(BLUE);
                       paint.setStyle(Paint.Style.STROKE);
                       paint.setStrokeWidth(w);
                       paint.setStrokeCap(Paint.Cap.ROUND);
                       paint.setStrokeJoin(Paint.Join.ROUND);
+                      bg.setColor(0xE02979FF);
+                      tp.setColor(Color.WHITE);
+                      tp.setTextSize(textPx);
+                      tp.setTextAlign(Paint.Align.CENTER);
                   }
-                  @Override protected void onDraw(Canvas c) { c.drawPath(path, paint); }
+
+                  @Override
+                  protected void onDraw(Canvas c) {
+                      c.drawPath(path, paint);
+                      float ts = tp.getTextSize();
+                      float tw = tp.measureText(banner);
+                      float cx = getWidth() / 2f, by = getHeight() - ts * 5;
+                      c.drawRoundRect(cx - tw / 2 - ts, by - ts * 1.5f, cx + tw / 2 + ts, by + ts * 0.8f, ts * 1.2f, ts * 1.2f, bg);
+                      c.drawText(banner, cx, by, tp);
+                  }
               }
 
               @Override public IBinder onBind(Intent i) { return null; }
 
               @Override
               public int onStartCommand(Intent intent, int flags, int startId) {
+                  if (intent != null && "CAPTURE".equals(intent.getAction())) {
+                      if (wm != null) {
+                          Intent data = intent.getParcelableExtra("data");
+                          handleCapture(intent.getIntExtra("code", 0), data);
+                      }
+                      return START_NOT_STICKY;
+                  }
                   startFg();
                   if (wm == null) buildViews();
                   if (intent != null && intent.hasExtra("count")) {
@@ -1297,24 +1765,39 @@ jobs:
                   return START_NOT_STICKY;
               }
 
-              void startFg() {
+              Notification notif() {
                   NotificationManager nm = getSystemService(NotificationManager.class);
                   nm.createNotificationChannel(new NotificationChannel("ov", "Trace Overlay", NotificationManager.IMPORTANCE_LOW));
-                  Notification n = new Notification.Builder(this, "ov")
+                  return new Notification.Builder(this, "ov")
                           .setContentTitle("Trace Overlay চালু আছে")
                           .setContentText("বন্ধ করতে প্যানেলের ✕ চাপুন")
                           .setSmallIcon(R.drawable.ic_fg)
                           .setOngoing(true).build();
+              }
+
+              void startFg() {
                   if (Build.VERSION.SDK_INT >= 34) {
-                      startForeground(1, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
+                      startForeground(1, notif(), ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
                   } else {
-                      startForeground(1, n);
+                      startForeground(1, notif());
                   }
               }
 
               int dp(float v) { return Math.round(v * density); }
 
               void toast(String s) { Toast.makeText(this, s, Toast.LENGTH_SHORT).show(); }
+
+              WindowManager.LayoutParams fullLp(int extraFlags) {
+                  WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
+                          WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT,
+                          WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+                          WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                                  | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+                                  | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS | extraFlags,
+                          PixelFormat.TRANSLUCENT);
+                  lp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+                  return lp;
+              }
 
               void buildViews() {
                   wm = (WindowManager) getSystemService(WINDOW_SERVICE);
@@ -1323,16 +1806,16 @@ jobs:
                   img = new ImageView(this);
                   img.setScaleType(ImageView.ScaleType.MATRIX);
                   img.setOnTouchListener((v, e) -> onImgTouch(e));
-                  imgLp = new WindowManager.LayoutParams(
-                          WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT,
-                          WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY, 0, PixelFormat.TRANSLUCENT);
-                  imgLp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+                  imgLp = fullLp(0);
                   imgLp.alpha = 0.5f;
                   applyFlags();
                   wm.addView(img, imgLp);
 
                   buildFrame();
-                  buildLayer();
+                  layer = new StrokeView(this, dp(3), dp(16));
+                  layer.setOnTouchListener((v, e) -> onLayerTouch(e));
+                  layerLp = fullLp(0);
+                  buildPalette();
                   buildPanel();
                   updateLockUi(false);
               }
@@ -1354,7 +1837,6 @@ jobs:
                   View b = new View(this);
                   b.setBackground(border);
                   frame.addView(b, new FrameLayout.LayoutParams(-1, -1));
-
                   TextView label = new TextView(this);
                   label.setText("🔓 সাজানোর মোড — ছবি সরান, বড়-ছোট করুন, ঘোরান\nআঁকতে প্যানেলের সবুজ বাটন চাপুন");
                   label.setTextColor(Color.BLACK);
@@ -1365,30 +1847,7 @@ jobs:
                   FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.CENTER_HORIZONTAL);
                   lp.topMargin = dp(40);
                   frame.addView(label, lp);
-
-                  frameLp = new WindowManager.LayoutParams(
-                          WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT,
-                          WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-                          WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
-                                  | WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
-                                  | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
-                                  | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
-                          PixelFormat.TRANSLUCENT);
-                  frameLp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
-              }
-
-              // Transparent layer that catches the pen stroke while magnet mode is on
-              void buildLayer() {
-                  layer = new StrokeView(this, dp(3));
-                  layer.setOnTouchListener((v, e) -> onLayerTouch(e));
-                  layerLp = new WindowManager.LayoutParams(
-                          WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT,
-                          WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-                          WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
-                                  | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
-                                  | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
-                          PixelFormat.TRANSLUCENT);
-                  layerLp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+                  frameLp = fullLp(WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE);
               }
 
               TextView chip(String s, int color) {
@@ -1408,6 +1867,12 @@ jobs:
                   LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
                   lp.leftMargin = dp(6);
                   row.addView(v, lp);
+              }
+
+              void addV(LinearLayout col, View v) {
+                  LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
+                  lp.topMargin = dp(6);
+                  col.addView(v, lp);
               }
 
               LinearLayout row() {
@@ -1440,17 +1905,25 @@ jobs:
                   });
                   addTool(row1, lockBtn);
 
-                  TextView eye = chip("👁", GREY);
-                  eye.setOnClickListener(v -> {
-                      boolean vis = img.getVisibility() == View.VISIBLE;
-                      img.setVisibility(vis ? View.INVISIBLE : View.VISIBLE);
-                      eye.setText(vis ? "🙈" : "👁");
+                  eyeBtn = chip("👁", GREY);
+                  eyeBtn.setOnClickListener(v -> {
+                      imgHidden = !imgHidden;
+                      img.setVisibility(imgHidden ? View.INVISIBLE : View.VISIBLE);
+                      eyeBtn.setText(imgHidden ? "🙈" : "👁");
                   });
-                  addTool(row1, eye);
+                  addTool(row1, eyeBtn);
 
                   TextView fit = chip("⟲", GREY);
                   fit.setOnClickListener(v -> fitImage());
                   addTool(row1, fit);
+
+                  TextView flip = chip("⇆", GREY);
+                  flip.setOnClickListener(v -> {
+                      m.postScale(-1, 1, img.getWidth() / 2f, img.getHeight() / 2f);
+                      img.setImageMatrix(m);
+                      toast("↔ ছবি উল্টানো হয়েছে");
+                  });
+                  addTool(row1, flip);
 
                   TextView drop = new TextView(this);
                   drop.setText("💧");
@@ -1555,6 +2028,264 @@ jobs:
                   wm.addView(panel, panelLp);
               }
 
+              // Side colour palette: save colours and copy their HEX code
+              void buildPalette() {
+                  palRoot = new LinearLayout(this);
+                  palRoot.setOrientation(LinearLayout.VERTICAL);
+                  palRoot.setGravity(Gravity.CENTER_HORIZONTAL);
+                  palRoot.setBackground(ImageTools.round(0xF01A1A24, dp(24)));
+                  palRoot.setPadding(dp(6), dp(6), dp(6), dp(6));
+
+                  TextView head = chip("🎨", PURPLE);
+                  head.setOnClickListener(v -> {
+                      palOpen = !palOpen;
+                      if (palOpen) refreshPalette();
+                      palBody.setVisibility(palOpen ? View.VISIBLE : View.GONE);
+                  });
+                  palRoot.addView(head);
+
+                  palBody = new LinearLayout(this);
+                  palBody.setOrientation(LinearLayout.VERTICAL);
+                  palBody.setGravity(Gravity.CENTER_HORIZONTAL);
+                  TextView pickImg = chip("💉", GREY);
+                  pickImg.setOnClickListener(v -> {
+                      if (colorBmp == null) { toast("আগে একটা ছবি দিন"); return; }
+                      showPicker(showLine ? lineBmp : colorBmp, new Matrix(m));
+                  });
+                  addV(palBody, pickImg);
+                  TextView pickScr = chip("📷", GREY);
+                  pickScr.setOnClickListener(v -> requestCapture());
+                  addV(palBody, pickScr);
+                  ScrollView sc = new ScrollView(this);
+                  swatchBox = new LinearLayout(this);
+                  swatchBox.setOrientation(LinearLayout.VERTICAL);
+                  swatchBox.setGravity(Gravity.CENTER_HORIZONTAL);
+                  sc.addView(swatchBox);
+                  LinearLayout.LayoutParams scl = new LinearLayout.LayoutParams(-2, dp(300));
+                  scl.topMargin = dp(6);
+                  palBody.addView(sc, scl);
+                  palBody.setVisibility(View.GONE);
+                  palRoot.addView(palBody);
+
+                  palLp = new WindowManager.LayoutParams(
+                          WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT,
+                          WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+                          WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE, PixelFormat.TRANSLUCENT);
+                  palLp.gravity = Gravity.END | Gravity.CENTER_VERTICAL;
+                  palLp.x = dp(8);
+                  wm.addView(palRoot, palLp);
+              }
+
+              void refreshPalette() {
+                  swatchBox.removeAllViews();
+                  List<Integer> cols = Palette.load(this);
+                  if (cols.isEmpty()) {
+                      TextView t = new TextView(this);
+                      t.setText("খালি\n💉/📷\nদিয়ে\nযোগ\nকরুন");
+                      t.setTextColor(0xFF9090A8);
+                      t.setGravity(Gravity.CENTER);
+                      swatchBox.addView(t);
+                      return;
+                  }
+                  for (int col : cols) {
+                      View s = new View(this);
+                      GradientDrawable g = new GradientDrawable();
+                      g.setShape(GradientDrawable.OVAL);
+                      g.setColor(col);
+                      g.setStroke(dp(2), Color.WHITE);
+                      s.setBackground(g);
+                      s.setOnClickListener(v -> {
+                          Palette.copy(this, col);
+                          toast("🎨 " + Palette.hex(col) + " কপি হয়েছে — আর্ট অ্যাপের HEX ঘরে পেস্ট করুন");
+                      });
+                      s.setOnLongClickListener(v -> {
+                          Palette.remove(this, col);
+                          refreshPalette();
+                          toast("রংটি মুছে ফেলা হয়েছে");
+                          return true;
+                      });
+                      LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(40), dp(40));
+                      lp.topMargin = dp(6);
+                      swatchBox.addView(s, lp);
+                  }
+              }
+
+              void hideAll(boolean hide) {
+                  int v = hide ? View.INVISIBLE : View.VISIBLE;
+                  panel.setVisibility(v);
+                  palRoot.setVisibility(v);
+                  frame.setVisibility(v);
+                  layer.setVisibility(v);
+                  img.setVisibility(hide || imgHidden ? View.INVISIBLE : View.VISIBLE);
+              }
+
+              // Full-screen picker: touch a colour, lift the pen to save it
+              void showPicker(Bitmap bmp, Matrix mat) {
+                  closePicker(false);
+                  FrameLayout f = new FrameLayout(this);
+                  f.setBackgroundColor(0xFF000000);
+                  ImageView iv = new ImageView(this);
+                  iv.setScaleType(ImageView.ScaleType.MATRIX);
+                  iv.setImageBitmap(bmp);
+                  iv.setImageMatrix(mat);
+                  f.addView(iv, new FrameLayout.LayoutParams(-1, -1));
+
+                  TextView top = new TextView(this);
+                  top.setText("🎯 যে রংটা চান তার উপর কলম রাখুন — তুললে সেভ হবে");
+                  top.setTextColor(Color.WHITE);
+                  top.setTextSize(16);
+                  top.setBackground(ImageTools.round(0xE0222230, dp(20)));
+                  top.setPadding(dp(16), dp(8), dp(16), dp(8));
+                  FrameLayout.LayoutParams tl = new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.CENTER_HORIZONTAL);
+                  tl.topMargin = dp(40);
+                  f.addView(top, tl);
+
+                  TextView prevChip = new TextView(this);
+                  prevChip.setTextSize(20);
+                  prevChip.setPadding(dp(24), dp(12), dp(24), dp(12));
+                  prevChip.setVisibility(View.INVISIBLE);
+                  FrameLayout.LayoutParams pl = new FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
+                  pl.bottomMargin = dp(70);
+                  f.addView(prevChip, pl);
+
+                  TextView cancel = chip("✕ বাতিল", RED);
+                  cancel.setOnClickListener(v -> closePicker(true));
+                  FrameLayout.LayoutParams cl = new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.END);
+                  cl.topMargin = dp(36);
+                  cl.rightMargin = dp(24);
+                  f.addView(cancel, cl);
+
+                  final Matrix inv = new Matrix();
+                  mat.invert(inv);
+                  iv.setOnTouchListener((v, e) -> {
+                      int[] loc = new int[2];
+                      v.getLocationOnScreen(loc);
+                      float[] p = {e.getRawX() - loc[0], e.getRawY() - loc[1]};
+                      inv.mapPoints(p);
+                      int x = Math.round(p[0]), y = Math.round(p[1]);
+                      int col = (x >= 0 && y >= 0 && x < bmp.getWidth() && y < bmp.getHeight()) ? bmp.getPixel(x, y) : 0;
+                      boolean ok = (col >>> 24) > 100;
+                      if (ok) {
+                          int r = (col >> 16) & 255, g = (col >> 8) & 255, b = col & 255;
+                          prevChip.setVisibility(View.VISIBLE);
+                          prevChip.setText(Palette.hex(col));
+                          prevChip.setTextColor((r * 299 + g * 587 + b * 114) / 1000 > 140 ? Color.BLACK : Color.WHITE);
+                          prevChip.setBackground(ImageTools.round(col | 0xFF000000, dp(26)));
+                      }
+                      if (e.getActionMasked() == MotionEvent.ACTION_UP) {
+                          if (ok) {
+                              Palette.add(this, col);
+                              toast("✅ " + Palette.hex(col) + " প্যালেটে সেভ হয়েছে");
+                              closePicker(true);
+                              palOpen = true;
+                              palBody.setVisibility(View.VISIBLE);
+                              refreshPalette();
+                          } else {
+                              toast("এখানে কোনো রং নেই — অন্য জায়গায় ট্যাপ করুন");
+                          }
+                      }
+                      return true;
+                  });
+                  picker = f;
+                  wm.addView(f, fullLp(0));
+              }
+
+              void closePicker(boolean restore) {
+                  if (picker != null) {
+                      try { wm.removeView(picker); } catch (Exception ignored) { }
+                      picker = null;
+                  }
+                  if (restore) hideAll(false);
+              }
+
+              void requestCapture() {
+                  hideAll(true);
+                  try {
+                      Intent i = new Intent(this, CaptureActivity.class);
+                      i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                      startActivity(i);
+                  } catch (Exception e) {
+                      hideAll(false);
+                      toast("স্ক্রিন থেকে রং নেওয়া যায়নি");
+                  }
+              }
+
+              void handleCapture(int code, Intent data) {
+                  if (code != Activity.RESULT_OK || data == null) {
+                      hideAll(false);
+                      toast("বাতিল করা হয়েছে");
+                      return;
+                  }
+                  try {
+                      startForeground(1, notif(), ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+                              | ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION);
+                      MediaProjectionManager mpm = getSystemService(MediaProjectionManager.class);
+                      final MediaProjection mp = mpm.getMediaProjection(code, data);
+                      if (mp == null) { captureFailed(null, null, null); return; }
+                      final Handler hd = new Handler(Looper.getMainLooper());
+                      mp.registerCallback(new MediaProjection.Callback() { }, hd);
+                      Rect bnd = wm.getCurrentWindowMetrics().getBounds();
+                      final int w = bnd.width(), h = bnd.height();
+                      final int dpi = getResources().getDisplayMetrics().densityDpi;
+                      final ImageReader ir = ImageReader.newInstance(w, h, PixelFormat.RGBA_8888, 3);
+                      hd.postDelayed(() -> {
+                          try {
+                              VirtualDisplay vd = mp.createVirtualDisplay("trace-pick", w, h, dpi,
+                                      DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, ir.getSurface(), null, hd);
+                              grab(mp, vd, ir, w, h, hd, 0);
+                          } catch (Exception e) {
+                              captureFailed(mp, null, ir);
+                          }
+                      }, 300);
+                  } catch (Exception e) {
+                      captureFailed(null, null, null);
+                  }
+              }
+
+              void grab(MediaProjection mp, VirtualDisplay vd, ImageReader ir, int w, int h, Handler hd, int tries) {
+                  hd.postDelayed(() -> {
+                      Image im = null;
+                      try { im = ir.acquireLatestImage(); } catch (Exception ignored) { }
+                      if (im == null) {
+                          if (tries < 10) grab(mp, vd, ir, w, h, hd, tries + 1);
+                          else captureFailed(mp, vd, ir);
+                          return;
+                      }
+                      Bitmap bmp = null;
+                      try {
+                          Image.Plane pl = im.getPlanes()[0];
+                          ByteBuffer buf = pl.getBuffer();
+                          int ps = pl.getPixelStride(), rs = pl.getRowStride();
+                          Bitmap tmp = Bitmap.createBitmap(rs / ps, h, Bitmap.Config.ARGB_8888);
+                          tmp.copyPixelsFromBuffer(buf);
+                          bmp = Bitmap.createBitmap(tmp, 0, 0, w, h);
+                      } catch (Exception ignored) {
+                      } finally {
+                          im.close();
+                      }
+                      stopCapture(mp, vd, ir);
+                      if (bmp == null) {
+                          hideAll(false);
+                          toast("স্ক্রিন থেকে রং নেওয়া যায়নি");
+                          return;
+                      }
+                      showPicker(bmp, new Matrix());
+                  }, tries == 0 ? 400 : 200);
+              }
+
+              void stopCapture(MediaProjection mp, VirtualDisplay vd, ImageReader ir) {
+                  try { if (vd != null) vd.release(); } catch (Exception ignored) { }
+                  try { if (ir != null) ir.close(); } catch (Exception ignored) { }
+                  try { if (mp != null) mp.stop(); } catch (Exception ignored) { }
+                  try { startFg(); } catch (Exception ignored) { }
+              }
+
+              void captureFailed(MediaProjection mp, VirtualDisplay vd, ImageReader ir) {
+                  stopCapture(mp, vd, ir);
+                  hideAll(false);
+                  toast("স্ক্রিন থেকে রং নেওয়া যায়নি");
+              }
+
               void updatePanelTexts() {
                   pageTv.setText(pageCount > 0 ? (page + 1) + "/" + pageCount : "0/0");
                   modeBtn.setText(showLine ? "⚫ আউটলাইন" : "🎨 রঙিন");
@@ -1593,7 +2324,7 @@ jobs:
                   magnetOn = !magnetOn;
                   updatePanelTexts();
                   updateMagnetLayer();
-                  if (magnetOn) toast(locked ? "🧲 চালু — কালো লাইনের কাছ দিয়ে আঁকুন" : "🧲 চালু — আগে 🔒 লক করুন");
+                  if (magnetOn) toast(locked ? "🧲 চালু — কালো লাইনের উপর দিয়ে আঁকুন" : "🧲 চালু — এবার 🔒 লক করুন");
                   else toast("🧲 ম্যাগনেট বন্ধ");
               }
 
@@ -1603,6 +2334,8 @@ jobs:
                       if (want && !layerShown) {
                           wm.addView(layer, layerLp);
                           layerShown = true;
+                          wm.removeView(palRoot);
+                          wm.addView(palRoot, palLp);
                           wm.removeView(panel);
                           wm.addView(panel, panelLp);
                       } else if (!want && layerShown) {
@@ -1672,9 +2405,10 @@ jobs:
                   }), 80);
               }
 
-              // Moves every stroke point onto the nearest black outline pixel
+              // Follows the centre of the black outline between points near the pen stroke
               void snap(List<float[]> in, List<Path> out, List<Long> durs) {
-                  if (mask == null || in.size() < 2) return;
+                  boolean[] sk = skel != null ? skel : mask;
+                  if (sk == null || in.size() < 2) return;
                   Matrix inv = new Matrix();
                   if (!m.invert(inv)) return;
                   int[] loc = new int[2];
@@ -1683,38 +2417,131 @@ jobs:
                   m.getValues(v);
                   float scale = (float) Math.hypot(v[Matrix.MSCALE_X], v[Matrix.MSKEW_Y]);
                   if (scale <= 0) return;
-                  int rb = Math.max(2, Math.min(80, Math.round(dp(18) / scale)));
-                  List<float[]> cur = new ArrayList<>();
-                  float[] p = new float[2];
+                  int rb = Math.max(3, Math.min(120, Math.round(dp(22) / scale)));
+                  List<float[]> bp = new ArrayList<>();
                   for (float[] s : in) {
-                      p[0] = s[0] - loc[0];
-                      p[1] = s[1] - loc[1];
+                      float[] p = {s[0] - loc[0], s[1] - loc[1]};
                       inv.mapPoints(p);
-                      int bx = Math.round(p[0]), by = Math.round(p[1]);
-                      int best = -1, bestD = rb * rb + 1;
-                      for (int dy = -rb; dy <= rb; dy++) {
-                          int y = by + dy;
-                          if (y < 0 || y >= maskH) continue;
-                          int rowStart = y * maskW;
-                          for (int dx = -rb; dx <= rb; dx++) {
-                              int x = bx + dx;
-                              if (x < 0 || x >= maskW) continue;
-                              int dd = dx * dx + dy * dy;
-                              if (dd < bestD && mask[rowStart + x]) { bestD = dd; best = rowStart + x; }
-                          }
-                      }
-                      if (best >= 0) {
-                          float[] q = {best % maskW + 0.5f, best / maskW + 0.5f};
-                          m.mapPoints(q);
-                          q[0] += loc[0];
-                          q[1] += loc[1];
-                          cur.add(q);
-                      } else {
-                          addStroke(cur, out, durs);
-                          cur = new ArrayList<>();
+                      bp.add(p);
+                  }
+                  float step = Math.max(2f, rb / 2f);
+                  List<float[]> anchors = new ArrayList<>();
+                  anchors.add(bp.get(0));
+                  float acc = 0;
+                  for (int i = 1; i < bp.size(); i++) {
+                      acc += (float) Math.hypot(bp.get(i)[0] - bp.get(i - 1)[0], bp.get(i)[1] - bp.get(i - 1)[1]);
+                      if (acc >= step || i == bp.size() - 1) {
+                          anchors.add(bp.get(i));
+                          acc = 0;
                       }
                   }
-                  addStroke(cur, out, durs);
+                  List<Integer> seq = new ArrayList<>();
+                  int prevS = -1;
+                  for (float[] a : anchors) {
+                      int s = nearest(sk, a[0], a[1], rb);
+                      if (s < 0) {
+                          flush(seq, out, durs, loc);
+                          seq = new ArrayList<>();
+                          prevS = -1;
+                          continue;
+                      }
+                      if (prevS < 0) {
+                          seq.add(s);
+                          prevS = s;
+                          continue;
+                      }
+                      if (s == prevS) continue;
+                      List<Integer> path = bfs(sk, prevS, s, rb);
+                      if (path == null) {
+                          flush(seq, out, durs, loc);
+                          seq = new ArrayList<>();
+                          seq.add(s);
+                      } else {
+                          for (int k = 1; k < path.size(); k++) seq.add(path.get(k));
+                      }
+                      prevS = s;
+                  }
+                  flush(seq, out, durs, loc);
+              }
+
+              int nearest(boolean[] sk, float fx, float fy, int rb) {
+                  int bx = Math.round(fx), by = Math.round(fy);
+                  int best = -1, bestD = rb * rb + 1;
+                  for (int dy = -rb; dy <= rb; dy++) {
+                      int y = by + dy;
+                      if (y < 0 || y >= maskH) continue;
+                      int rowStart = y * maskW;
+                      for (int dx = -rb; dx <= rb; dx++) {
+                          int x = bx + dx;
+                          if (x < 0 || x >= maskW) continue;
+                          int dd = dx * dx + dy * dy;
+                          if (dd < bestD && sk[rowStart + x]) {
+                              bestD = dd;
+                              best = rowStart + x;
+                          }
+                      }
+                  }
+                  return best;
+              }
+
+              List<Integer> bfs(boolean[] sk, int a, int b, int rb) {
+                  int ax = a % maskW, ay = a / maskW, bx = b % maskW, by = b / maskW;
+                  int x0 = Math.max(0, Math.min(ax, bx) - rb), y0 = Math.max(0, Math.min(ay, by) - rb);
+                  int x1 = Math.min(maskW - 1, Math.max(ax, bx) + rb), y1 = Math.min(maskH - 1, Math.max(ay, by) + rb);
+                  int bw = x1 - x0 + 1, bh = y1 - y0 + 1;
+                  if ((long) bw * bh > 2_000_000L) return null;
+                  int[] par = new int[bw * bh];
+                  Arrays.fill(par, -1);
+                  int[] q = new int[bw * bh];
+                  int head = 0, tail = 0;
+                  int la = (ay - y0) * bw + (ax - x0), lb = (by - y0) * bw + (bx - x0);
+                  par[la] = la;
+                  q[tail++] = la;
+                  boolean found = false;
+                  while (head < tail) {
+                      int li = q[head++];
+                      if (li == lb) { found = true; break; }
+                      int lx = li % bw, ly = li / bw;
+                      for (int dy = -1; dy <= 1; dy++) {
+                          for (int dx = -1; dx <= 1; dx++) {
+                              if (dx == 0 && dy == 0) continue;
+                              int nx = lx + dx, ny = ly + dy;
+                              if (nx < 0 || ny < 0 || nx >= bw || ny >= bh) continue;
+                              int nl = ny * bw + nx;
+                              if (par[nl] != -1) continue;
+                              if (!sk[(ny + y0) * maskW + (nx + x0)]) continue;
+                              par[nl] = li;
+                              q[tail++] = nl;
+                          }
+                      }
+                  }
+                  if (!found) return null;
+                  List<Integer> path = new ArrayList<>();
+                  int c = lb;
+                  while (true) {
+                      path.add((c / bw + y0) * maskW + (c % bw + x0));
+                      if (c == la) break;
+                      c = par[c];
+                  }
+                  Collections.reverse(path);
+                  double direct = Math.hypot(ax - bx, ay - by);
+                  if (path.size() > direct * 3 + rb * 2) return null;
+                  return path;
+              }
+
+              void flush(List<Integer> seq, List<Path> out, List<Long> durs, int[] loc) {
+                  if (seq.size() < 2) return;
+                  List<float[]> sp = new ArrayList<>();
+                  for (int k = 0; k < seq.size(); k++) {
+                      if (k % 2 != 0 && k != seq.size() - 1) continue;
+                      int idx = seq.get(k);
+                      float[] q = {idx % maskW + 0.5f, idx / maskW + 0.5f};
+                      m.mapPoints(q);
+                      q[0] += loc[0];
+                      q[1] += loc[1];
+                      sp.add(q);
+                  }
+                  addStroke(sp, out, durs);
               }
 
               void addStroke(List<float[]> s, List<Path> out, List<Long> durs) {
@@ -1755,8 +2582,18 @@ jobs:
                   maskH = l.getHeight();
                   int[] px = new int[maskW * maskH];
                   l.getPixels(px, 0, maskW, 0, 0, maskW, maskH);
-                  mask = new boolean[px.length];
-                  for (int i = 0; i < px.length; i++) mask[i] = (px[i] >>> 24) > 100;
+                  final boolean[] mk = new boolean[px.length];
+                  for (int i = 0; i < px.length; i++) mk[i] = (px[i] >>> 24) > 100;
+                  mask = mk;
+                  skel = null;
+                  final int token = ++skelToken;
+                  final int w = maskW, h = maskH;
+                  new Thread(() -> {
+                      boolean[] s = ImageTools.skeleton(mk, w, h);
+                      img.post(() -> { if (token == skelToken) skel = s; });
+                  }).start();
+                  imgHidden = false;
+                  eyeBtn.setText("👁");
                   img.setImageBitmap(showLine ? lineBmp : colorBmp);
                   img.setVisibility(View.VISIBLE);
                   img.post(this::fitImage);
@@ -1824,8 +2661,10 @@ jobs:
                   if (wm != null) {
                       try { wm.removeView(img); } catch (Exception ignored) { }
                       try { wm.removeView(panel); } catch (Exception ignored) { }
+                      try { wm.removeView(palRoot); } catch (Exception ignored) { }
                       if (frameShown) try { wm.removeView(frame); } catch (Exception ignored) { }
                       if (layerShown) try { wm.removeView(layer); } catch (Exception ignored) { }
+                      closePicker(false);
                   }
                   super.onDestroy();
               }
